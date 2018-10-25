@@ -170,7 +170,7 @@ static int __init huawei_wmi_init(void)
     int err;
 
     if (!wmi_has_guid(EVENT_GUID)) {
-        pr_warning("%s: No known WMI Event GUID found\n", MODULE_NAME);
+        pr_warning("%s: No known WMI Events found\n", MODULE_NAME);
         return -ENODEV;
     }
 
