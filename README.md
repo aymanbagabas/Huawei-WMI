@@ -9,7 +9,7 @@ First, make sure that you install kernel headers. In Fedora it would be:
 It should be similar in other distributions.
 
 Then clone and install the module. Note you have to do that for every kernel update.
-Now install the module:
+
 ```
 $ git clone https://github.com/aymanbagabas/Huawei-WMI
 $ cd Huawei-WMI
