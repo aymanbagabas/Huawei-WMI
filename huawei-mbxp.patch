@@ -1,0 +1,416 @@
+diff --git a/drivers/platform/x86/Kconfig b/drivers/platform/x86/Kconfig
+index bdac939de223..0dba1e82e320 100644
+--- a/drivers/platform/x86/Kconfig
++++ b/drivers/platform/x86/Kconfig
+@@ -1231,6 +1231,17 @@ config I2C_MULTI_INSTANTIATE
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called i2c-multi-instantiate.
+ 
++config HUAWEI_LAPTOP
++	tristate "Huawei WMI hotkeys"
++	depends on ACPI
++        depends on ACPI_WMI
++	depends on INPUT
++	select INPUT_SPARSEKMAP
++	---help---
++	  This driver adds support for Huawei WMI hotkeys.
++	  Supported devices are:
++	  - Matebook X Pro
++
+ endif # X86_PLATFORM_DEVICES
+ 
+ config PMC_ATOM
+diff --git a/drivers/platform/x86/Makefile b/drivers/platform/x86/Makefile
+index e6d1becf81ce..5984354e18ff 100644
+--- a/drivers/platform/x86/Makefile
++++ b/drivers/platform/x86/Makefile
+@@ -29,6 +29,7 @@ obj-$(CONFIG_ACERHDF)		+= acerhdf.o
+ obj-$(CONFIG_HP_ACCEL)		+= hp_accel.o
+ obj-$(CONFIG_HP_WIRELESS)	+= hp-wireless.o
+ obj-$(CONFIG_HP_WMI)		+= hp-wmi.o
++obj-$(CONFIG_HUAWEI_LAPTOP)		+= huawei_wmi.o
+ obj-$(CONFIG_AMILO_RFKILL)	+= amilo-rfkill.o
+ obj-$(CONFIG_GPD_POCKET_FAN)	+= gpd-pocket-fan.o
+ obj-$(CONFIG_TC1100_WMI)	+= tc1100-wmi.o
+diff --git a/drivers/platform/x86/huawei_wmi.c b/drivers/platform/x86/huawei_wmi.c
+new file mode 100644
+index 000000000000..6ad8e24e30a1
+--- /dev/null
++++ b/drivers/platform/x86/huawei_wmi.c
+@@ -0,0 +1,222 @@
++/*
++ *  Huawei WMI Hotkeys Driver
++ *
++ *  Copyright (C) 2018          Ayman Bagabas <ayman.bagabas@gmail.com>
++ *
++ *  This program is free software: you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation, either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License
++ *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ *
++ */
++
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/input.h>
++#include <linux/input/sparse-keymap.h>
++#include <linux/acpi.h>
++#include <linux/huawei_wmi.h>
++
++MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
++MODULE_DESCRIPTION("Huawei WMI hotkeys");
++MODULE_LICENSE("GPL");
++
++#define DEVICE_NAME "huawei"
++#define MODULE_NAME DEVICE_NAME"_wmi"
++
++/*
++ * Huawei WMI Devices GUIDs
++ */
++#define AMW0_GUID "ABBC0F5B-8EA1-11D1-A000-C90629100000" // \_SB.AMW0
++#define WTBT_GUID "86CCFD48-205E-4A77-9C48-2021CBEDE341" // \_SB_.WTBT
++
++/*
++ * Huawei WMI Events GUIDs
++ */
++#define EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
++
++MODULE_ALIAS("wmi:"AMW0_GUID);
++MODULE_ALIAS("wmi:"EVENT_GUID);
++
++enum {
++    MICMUTE_LED_ON = 0x00010B04,
++    MICMUTE_LED_OFF = 0x00000B04,
++};
++
++static const struct key_entry huawei_wmi_keymap[] __initconst = {
++        { KE_IGNORE, 0x281, { KEY_BRIGHTNESSDOWN } },
++        { KE_IGNORE, 0x282, { KEY_BRIGHTNESSUP } },
++        { KE_IGNORE, 0x283, { KEY_KBDILLUMTOGGLE } },
++        { KE_IGNORE, 0x284, { KEY_MUTE } },
++        { KE_IGNORE, 0x285, { KEY_VOLUMEDOWN } },
++        { KE_IGNORE, 0x286, { KEY_VOLUMEUP } },
++        { KE_KEY,    0x287, { KEY_MICMUTE } },
++        { KE_KEY,    0x289, { KEY_RFKILL } },
++        { KE_KEY,    0x28a, { KEY_PROG1 } },          // Huawei |M| button
++        { KE_END,    0 }
++};
++
++struct huawei_wmi_device {
++    struct input_dev *inputdev;
++};
++static struct huawei_wmi_device *wmi_device;
++
++int huawei_wmi_micmute_led_set(bool on)
++{
++    u32 args = (on) ? MICMUTE_LED_ON: MICMUTE_LED_OFF;
++    struct acpi_buffer input = { (acpi_size)sizeof(args), &args };
++    acpi_status status;
++
++    status = wmi_evaluate_method(AMW0_GUID, 0, 1, &input, NULL);
++    if (ACPI_FAILURE(status))
++        return status;
++
++    return 0;
++}
++EXPORT_SYMBOL_GPL(huawei_wmi_micmute_led_set);
++
++static void huawei_wmi_process_key(struct input_dev *input_dev, int code)
++{
++    const struct key_entry *key;
++    
++    key = sparse_keymap_entry_from_scancode(input_dev, code);
++
++    if (!key) {
++        pr_info("%s: Unknown key pressed, code: 0x%04x\n", MODULE_NAME, code);
++        return;
++    }
++
++    sparse_keymap_report_entry(input_dev, key, 1, true);
++}
++
++static void huawei_wmi_notify(u32 value, void *context)
++{
++    struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
++    union acpi_object *obj;
++    acpi_status status;
++
++    status = wmi_get_event_data(value, &response);
++    if (ACPI_FAILURE(status)) {
++        pr_err("%s: Bad event status 0x%x\n", MODULE_NAME, status);
++        return;
++    }
++
++    obj = (union acpi_object *)response.pointer;
++
++    if (!obj)
++        return;
++
++    if (obj->type == ACPI_TYPE_INTEGER) {
++        huawei_wmi_process_key(wmi_device->inputdev, obj->integer.value);
++    } else {
++        pr_info("%s: Unknown response received %d\n", MODULE_NAME, obj->type);
++    }
++
++    kfree(response.pointer);
++}
++
++static int huawei_input_init(void)
++{
++    acpi_status status;
++    int err;
++
++    wmi_device->inputdev = input_allocate_device();
++    if (!wmi_device->inputdev)
++        return -ENOMEM;
++
++    wmi_device->inputdev->name = "Huawei WMI hotkeys";
++    wmi_device->inputdev->phys = "wmi/input0";
++    wmi_device->inputdev->id.bustype = BUS_HOST;
++
++    err = sparse_keymap_setup(wmi_device->inputdev, huawei_wmi_keymap, NULL);
++    if (err)
++        goto err_free_dev;
++
++    status = wmi_install_notify_handler(EVENT_GUID,
++                                        huawei_wmi_notify,
++                                        NULL);
++
++    if (ACPI_FAILURE(status)) {
++        err = -EIO;
++        goto err_free_dev;
++    }
++
++    err = input_register_device(wmi_device->inputdev);
++    if (err)
++        goto err_remove_notifier;
++
++    return 0;
++
++
++err_remove_notifier:
++    wmi_remove_notify_handler(EVENT_GUID);
++err_free_dev:
++    input_free_device(wmi_device->inputdev);
++    return err;
++}
++
++static void huawei_input_exit(void)
++{
++    wmi_remove_notify_handler(EVENT_GUID);
++    input_unregister_device(wmi_device->inputdev);
++}
++
++static int __init huawei_wmi_setup(void)
++{
++    int err;
++
++    wmi_device = kmalloc(sizeof(struct huawei_wmi_device), GFP_KERNEL);
++    if (!wmi_device)
++        return -ENOMEM;
++
++    err = huawei_input_init();
++    if (err)
++        goto err_input;
++
++    return 0;
++
++err_input:
++    return err;
++}
++
++static void huawei_wmi_destroy(void)
++{
++    huawei_input_exit();
++    kfree(wmi_device);
++}
++
++static int __init huawei_wmi_init(void)
++{
++    int err;
++
++    if (!wmi_has_guid(EVENT_GUID)) {
++        pr_warning("%s: No known WMI Event GUID found\n", MODULE_NAME);
++        return -ENODEV;
++    }
++
++    err = huawei_wmi_setup();
++    if (err) {
++        pr_err("%s: Failed to setup device\n", MODULE_NAME);
++        return err;
++    }
++
++    return 0;
++}
++
++static void __exit huawei_wmi_exit(void)
++{
++    huawei_wmi_destroy();
++    pr_debug("%s: Driver unloaded successfully\n", MODULE_NAME);
++}
++
++module_init(huawei_wmi_init);
++module_exit(huawei_wmi_exit);
+diff --git a/include/linux/huawei_wmi.h b/include/linux/huawei_wmi.h
+new file mode 100644
+index 000000000000..69b656c5029b
+--- /dev/null
++++ b/include/linux/huawei_wmi.h
+@@ -0,0 +1,7 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef __HUAWEI_WMI_H__
++#define __HUAWEI_WMI_H__
++
++int huawei_wmi_micmute_led_set(bool on);
++
++#endif
+diff --git a/sound/pci/hda/huawei_wmi_helper.c b/sound/pci/hda/huawei_wmi_helper.c
+new file mode 100644
+index 000000000000..20355bf08af8
+--- /dev/null
++++ b/sound/pci/hda/huawei_wmi_helper.c
+@@ -0,0 +1,66 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Helper functions for Huawei Mic Mute LED control;
++ * to be included from codec driver
++ */
++ 
++#if IS_ENABLED(CONFIG_HUAWEI_LAPTOP)
++#include <linux/huawei_wmi.h>
++
++static int (*huawei_wmi_micmute_led_set_func)(bool);
++
++static void update_huawei_wmi_micmute_led(struct hda_codec *codec,
++				      struct snd_kcontrol *kcontrol,
++				      struct snd_ctl_elem_value *ucontrol)
++{
++	if (!ucontrol || !huawei_wmi_micmute_led_set_func)
++		return;
++	if (strcmp("Capture Switch", ucontrol->id.name) == 0 && ucontrol->id.index == 0) {
++		/* TODO: How do I verify if it's a mono or stereo here? */
++		bool val = ucontrol->value.integer.value[0] || ucontrol->value.integer.value[1];
++		huawei_wmi_micmute_led_set_func(!val);
++	}
++}
++ 
++static void alc_fixup_huawei_wmi(struct hda_codec *codec,
++			       const struct hda_fixup *fix, int action)
++{
++	struct hda_gen_spec *spec = codec->spec;
++	bool removefunc = false;
++	
++	codec_info(codec, "In alc_fixup_huawei_wmi\n");
++
++	if (action == HDA_FIXUP_ACT_PROBE) {
++		if (!huawei_wmi_micmute_led_set_func)
++			huawei_wmi_micmute_led_set_func = symbol_request(huawei_wmi_micmute_led_set);
++		if (!huawei_wmi_micmute_led_set_func) {
++			codec_warn(codec, "Failed to find huawei_wmi symbol huawei_wmi_micmute_led_set\n");
++			return;
++		}
++
++		removefunc = true;
++		if (huawei_wmi_micmute_led_set_func(false) >= 0) {
++			if (spec->num_adc_nids > 1 && !spec->dyn_adc_switch)
++				codec_dbg(codec, "Skipping micmute LED control due to several ADCs");
++			else {
++				spec->cap_sync_hook = update_huawei_wmi_micmute_led;
++				removefunc = false;
++			}
++		}
++	    codec_info(codec, "In alc_fixup_huawei_wmi IF\n");
++
++	}
++
++	if (huawei_wmi_micmute_led_set_func && (action == HDA_FIXUP_ACT_FREE || removefunc)) {
++		symbol_put(huawei_wmi_micmute_led_set);
++		huawei_wmi_micmute_led_set_func = NULL;
++	}
++}
++ 
++#else
++
++static void hda_fixup_huawei_wmi(struct hda_codec *codec,
++			       const struct hda_fixup *fix, int action)
++{
++}
++ 
++#endif
+diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
+index fa61674a5605..fd3ca3dc745a 100644
+--- a/sound/pci/hda/patch_realtek.c
++++ b/sound/pci/hda/patch_realtek.c
+@@ -5371,6 +5371,9 @@ static void alc_fixup_thinkpad_acpi(struct hda_codec *codec,
+ /* for dell wmi mic mute led */
+ #include "dell_wmi_helper.c"
+ 
++/* for huawei wmi mic mute led */
++#include "huawei_wmi_helper.c"
++
+ /* for alc295_fixup_hp_top_speakers */
+ #include "hp_x360_helper.c"
+ 
+@@ -5495,6 +5498,8 @@ enum {
+ 	ALC255_FIXUP_DELL_HEADSET_MIC,
+ 	ALC295_FIXUP_HP_X360,
+ 	ALC221_FIXUP_HP_HEADSET_MIC,
++	ALC256_FIXUP_HUAWEI_MBXP_PINS,
++	ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED,
+ };
+ 
+ static const struct hda_fixup alc269_fixups[] = {
+@@ -6005,6 +6010,28 @@ static const struct hda_fixup alc269_fixups[] = {
+ 		.type = HDA_FIXUP_FUNC,
+ 		.v.func = alc_fixup_dell_wmi,
+ 	},
++	[ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED] = {
++		.type = HDA_FIXUP_FUNC,
++		.v.func = alc_fixup_huawei_wmi,
++	},
++	[ALC256_FIXUP_HUAWEI_MBXP_PINS] = {
++		.type = HDA_FIXUP_PINS,
++		.v.pins = (const struct hda_pintbl[]) {
++		{0x12, 0x90a60130},
++		{0x13, 0x40000000},
++		{0x14, 0x90170110},
++		{0x18, 0x411111f0},
++		{0x19, 0x04a11040},
++		{0x1a, 0x411111f0},
++		{0x1b, 0x90170112},
++		{0x1d, 0x40759a05},
++		{0x1e, 0x411111f0},
++		{0x21, 0x04211020},
++		{ },
++		},
++		.chained = true,
++		.chain_id = ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED
++	},
+ 	[ALC282_FIXUP_ASPIRE_V5_PINS] = {
+ 		.type = HDA_FIXUP_PINS,
+ 		.v.pins = (const struct hda_pintbl[]) {
+@@ -6594,6 +6621,8 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
+ 	SND_PCI_QUIRK(0x17aa, 0x511f, "Thinkpad", ALC298_FIXUP_TPT470_DOCK),
+ 	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Quanta FL1", ALC269_FIXUP_PCM_44K),
+ 	SND_PCI_QUIRK(0x17aa, 0x9e54, "LENOVO NB", ALC269_FIXUP_LENOVO_EAPD),
++	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_MBXP_PINS),
++	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED),
+ 	SND_PCI_QUIRK(0x1b7d, 0xa831, "Ordissimo EVE2 ", ALC269VB_FIXUP_ORDISSIMO_EVE2), /* Also known as Malata PC-B1303 */
+ 
+ #if 0
+@@ -6720,6 +6749,7 @@ static const struct hda_model_fixup alc269_fixup_models[] = {
+ 	{.id = ALC293_FIXUP_DELL1_MIC_NO_PRESENCE, .name = "alc293-dell1"},
+ 	{.id = ALC283_FIXUP_HEADSET_MIC, .name = "alc283-headset"},
+ 	{.id = ALC255_FIXUP_DELL_WMI_MIC_MUTE_LED, .name = "alc255-dell-mute"},
++	{.id = ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED, .name = "alc256-huawei-micmute"},
+ 	{.id = ALC282_FIXUP_ASPIRE_V5_PINS, .name = "aspire-v5"},
+ 	{.id = ALC280_FIXUP_HP_GPIO4, .name = "hp-gpio4"},
+ 	{.id = ALC286_FIXUP_HP_GPIO_LED, .name = "hp-gpio-led"},
