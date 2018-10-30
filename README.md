@@ -19,7 +19,7 @@ $ sudo make install
 
 ## TODO
 * Merge driver into upstream
-* Getting device LEDs to work
+* ~~Getting device LEDs to work~~ See `huawei-wmi-micmute-led-and-mbxp-pins-fixup.patch`
 * Support new devices
 * ACPI driver?
 
