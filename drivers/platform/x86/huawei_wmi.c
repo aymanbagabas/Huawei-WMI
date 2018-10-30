@@ -24,24 +24,33 @@
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
 #include <linux/acpi.h>
-#include <linux/leds.h>
-#include <linux/platform_device.h>
-#include <linux/device.h>
-#include <linux/miscdevice.h>
+#include <linux/wmi.h>
+#include <linux/huawei_wmi.h>
 
 MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
-MODULE_DESCRIPTION("Huawei WMI Hotkeys Driver");
+MODULE_DESCRIPTION("Huawei WMI hotkeys");
 MODULE_LICENSE("GPL");
 
 #define DEVICE_NAME "huawei"
 #define MODULE_NAME DEVICE_NAME"_wmi"
 
 /*
+ * Huawei WMI Devices GUIDs
+ */
+#define AMW0_GUID "ABBC0F5B-8EA1-11D1-A000-C90629100000" // \_SB.AMW0
+
+/*
  * Huawei WMI Events GUIDs
  */
 #define EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
 
+MODULE_ALIAS("wmi:"AMW0_GUID);
 MODULE_ALIAS("wmi:"EVENT_GUID);
+
+enum {
+    MICMUTE_LED_ON = 0x00010B04,
+    MICMUTE_LED_OFF = 0x00000B04,
+};
 
 static const struct key_entry huawei_wmi_keymap[] __initconst = {
         { KE_IGNORE, 0x281, { KEY_BRIGHTNESSDOWN } },
@@ -51,7 +60,7 @@ static const struct key_entry huawei_wmi_keymap[] __initconst = {
         { KE_IGNORE, 0x285, { KEY_VOLUMEDOWN } },
         { KE_IGNORE, 0x286, { KEY_VOLUMEUP } },
         { KE_KEY,    0x287, { KEY_MICMUTE } },
-        { KE_KEY,    0x289, { KEY_WLAN } },
+        { KE_KEY,    0x289, { KEY_RFKILL } },
         { KE_KEY,    0x28a, { KEY_PROG1 } },          // Huawei |M| button
         { KE_END,    0 }
 };
@@ -60,6 +69,20 @@ struct huawei_wmi_device {
     struct input_dev *inputdev;
 };
 static struct huawei_wmi_device *wmi_device;
+
+int huawei_wmi_micmute_led_set(bool on)
+{
+    u32 args = (on) ? MICMUTE_LED_ON: MICMUTE_LED_OFF;
+    struct acpi_buffer input = { (acpi_size)sizeof(args), &args };
+    acpi_status status;
+
+    status = wmi_evaluate_method(AMW0_GUID, 0, 1, &input, NULL);
+    if (ACPI_FAILURE(status))
+        return status;
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(huawei_wmi_micmute_led_set);
 
 static void huawei_wmi_process_key(struct input_dev *input_dev, int code)
 {
@@ -89,8 +112,13 @@ static void huawei_wmi_notify(u32 value, void *context)
 
     obj = (union acpi_object *)response.pointer;
 
-    if (obj && obj->type == ACPI_TYPE_INTEGER) {
+    if (!obj)
+        return;
+
+    if (obj->type == ACPI_TYPE_INTEGER) {
         huawei_wmi_process_key(wmi_device->inputdev, obj->integer.value);
+    } else {
+        pr_info("%s: Unknown response received %d\n", MODULE_NAME, obj->type);
     }
 
     kfree(response.pointer);
@@ -105,7 +133,7 @@ static int huawei_input_init(void)
     if (!wmi_device->inputdev)
         return -ENOMEM;
 
-    wmi_device->inputdev->name = "Huawei WMI Hotkeys Driver";
+    wmi_device->inputdev->name = "Huawei WMI hotkeys";
     wmi_device->inputdev->phys = "wmi/input0";
     wmi_device->inputdev->id.bustype = BUS_HOST;
 
@@ -163,6 +191,7 @@ err_input:
 static void huawei_wmi_destroy(void)
 {
     huawei_input_exit();
+    kfree(wmi_device);
 }
 
 static int __init huawei_wmi_init(void)
@@ -170,7 +199,7 @@ static int __init huawei_wmi_init(void)
     int err;
 
     if (!wmi_has_guid(EVENT_GUID)) {
-        pr_warning("%s: No known WMI Events found\n", MODULE_NAME);
+        pr_warning("%s: No known WMI Event GUID found\n", MODULE_NAME);
         return -ENODEV;
     }
 
@@ -186,7 +215,6 @@ static int __init huawei_wmi_init(void)
 static void __exit huawei_wmi_exit(void)
 {
     huawei_wmi_destroy();
-    kfree(wmi_device);
     pr_debug("%s: Driver unloaded successfully\n", MODULE_NAME);
 }
 
