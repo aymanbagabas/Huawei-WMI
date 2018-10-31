@@ -17,6 +17,13 @@ $ make
 $ sudo make install
 ```
 
+## Keyboard remaps
+Copy `99-Huawei-MBXP.hwdb` to `/etc/udev/hwdb.d/` to get the micmute to work and define missing keys within the atkbd driver.
+Then update hwdb tables:
+```
+sudo udevadm --debug hwdb --update; sudo udevadm trigger
+```
+
 ## TODO
 * Merge driver into upstream
 * ~~Getting device LEDs to work~~ See `0003-ALSA-hda-add-support-for-Huawei-WMI-MicMute-LED.patch`
