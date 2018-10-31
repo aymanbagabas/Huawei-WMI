@@ -26,7 +26,7 @@
 #include <linux/input/sparse-keymap.h>
 #include <linux/acpi.h>
 #include <linux/wmi.h>
-#include <linux/huawei_wmi.h>
+//#include <linux/huawei_wmi.h>
 
 MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
 MODULE_DESCRIPTION("Huawei WMI hotkeys");
