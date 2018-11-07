@@ -30,12 +30,6 @@ MODULE_DESCRIPTION("Huawei WMI hotkeys");
 MODULE_LICENSE("GPL");
 
 /*
- * Huawei WMI Devices GUIDs
- */
-#define MBX_METHOD_GUID "69142400-C6A3-40fa-BADB-8A2652834100"
-#define MBXP_METHOD_GUID "ABBC0F5B-8EA1-11D1-A000-C90629100000"
-
-/*
  * Huawei WMI Events GUIDs
  */
 #define MBX_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
@@ -43,11 +37,6 @@ MODULE_LICENSE("GPL");
 
 MODULE_ALIAS("wmi:"MBX_EVENT_GUID);
 MODULE_ALIAS("wmi:"MBXP_EVENT_GUID);
-
-enum {
-	MICMUTE_LED_ON = 0x00010B04,
-	MICMUTE_LED_OFF = 0x00000B04,
-};
 
 static const struct key_entry huawei_wmi_keymap[] __initconst = {
 		{ KE_KEY,    0x281, { KEY_BRIGHTNESSDOWN } },
@@ -66,19 +55,33 @@ static const struct key_entry huawei_wmi_keymap[] __initconst = {
 		{ KE_END,	 0 }
 };
 
-static char *method_guid;
 static char *event_guid;
 static struct input_dev *inputdev;
 
 int huawei_wmi_micmute_led_set(bool on)
 {
-	u32 args = on ? MICMUTE_LED_ON : MICMUTE_LED_OFF;
-	struct acpi_buffer input = { (acpi_size)sizeof(args), &args };
-	acpi_status status;
+	acpi_handle handle = ACPI_HANDLE(&inputdev->dev);
+	char *method;
+	union acpi_object args[3];
+	args[0].type = args[1].type = args[2].type = ACPI_TYPE_INTEGER;
+	args[1].integer.value = 0x04;
+	struct acpi_object_list arg_list = {
+			.pointer = args,
+			.count = ARRAY_SIZE(args),
+	};
 
-	status = wmi_evaluate_method(method_guid, 0, 1, &input, NULL);
-	if (ACPI_FAILURE(status))
-		return status;
+	if (acpi_has_method(handle, method = "\\_SB.PCI0.LPCB.EC0.SPIN")) {
+		args[0].integer.value = 0;
+		args[2].integer.value = on ? 1 : 0;
+	} else if (acpi_has_method(handle, method = "\\_SB.PCI0.LPCB.EC0.WPIN")) {
+		args[0].integer.value = 1;
+		args[2].integer.value = on ? 0 : 1;
+	} else {
+		pr_err("Unable to find ACPI method %s\n", method);
+		return -1;
+	}
+
+	acpi_evaluate_object(handle, method, &arg_list, NULL);
 
 	return 0;
 }
@@ -93,7 +96,6 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 	 * The actual key is fetched from the method WQ00
 	 */
 	if (code == 0x80) {
-		acpi_handle handle;
 		acpi_status status;
 		unsigned long long result;
 		const char *method = "\\WMI0.WQ00";
@@ -106,13 +108,7 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 				.count = ARRAY_SIZE(args),
 		};
 
-		status = acpi_get_handle(NULL, (char *)method, &handle);
-		if (ACPI_FAILURE(status)) {
-				dev_err(&inputdev->dev, "Unable to get ACPI handle\n");
-				return;
-		}
-
-		status = acpi_evaluate_integer(handle, (char *)method, &arg_list, &result);
+		status = acpi_evaluate_integer(ACPI_HANDLE(&inputdev->dev), (char *)method, &arg_list, &result);
 		if (ACPI_FAILURE(status)) {
 				dev_err(&inputdev->dev, "Unable to evaluate ACPI method %s\n", method);
 				return;
@@ -214,13 +210,9 @@ static int __init huawei_wmi_init(void)
 {
 	int err;
 
-	if (wmi_has_guid(MBX_EVENT_GUID) &&
-		wmi_has_guid(MBX_METHOD_GUID)) {
-		method_guid = MBX_METHOD_GUID;
+	if (wmi_has_guid(MBX_EVENT_GUID)) {
 		event_guid = MBX_EVENT_GUID;
-	} else if (wmi_has_guid(MBXP_EVENT_GUID) &&
-		wmi_has_guid(MBXP_METHOD_GUID)) {
-		method_guid = MBXP_METHOD_GUID;
+	} else if (wmi_has_guid(MBXP_EVENT_GUID)) {
 		event_guid = MBXP_EVENT_GUID;
 	} else {
 		pr_warn("No known WMI GUID found\n");
