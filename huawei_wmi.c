@@ -1,25 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  Huawei WMI hotkeys
  *
- *  Copyright (C) 2018		  Ayman Bagabas <ayman.bagabas@gmail.com>
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
+ *  Copyright (C) 2018	      Ayman Bagabas <ayman.bagabas@gmail.com>
  */
 
 #include <linux/acpi.h>
-#include <linux/init.h>
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
 #include <linux/module.h>
@@ -60,15 +46,17 @@ static struct input_dev *inputdev;
 
 int huawei_wmi_micmute_led_set(bool on)
 {
-	acpi_handle handle = ACPI_HANDLE(&inputdev->dev);
+	acpi_handle handle;
 	char *method;
 	union acpi_object args[3];
+	struct acpi_object_list arg_list = {
+		.pointer = args,
+		.count = ARRAY_SIZE(args),
+	};
+
+	handle = ACPI_HANDLE(&inputdev->dev);
 	args[0].type = args[1].type = args[2].type = ACPI_TYPE_INTEGER;
 	args[1].integer.value = 0x04;
-	struct acpi_object_list arg_list = {
-			.pointer = args,
-			.count = ARRAY_SIZE(args),
-	};
 
 	if (acpi_has_method(handle, method = "\\_SB.PCI0.LPCB.EC0.SPIN")) {
 		args[0].integer.value = 0;
@@ -77,8 +65,8 @@ int huawei_wmi_micmute_led_set(bool on)
 		args[0].integer.value = 1;
 		args[2].integer.value = on ? 0 : 1;
 	} else {
-		pr_err("Unable to find ACPI method %s\n", method);
-		return -1;
+		dev_err(&inputdev->dev, "Unable to find ACPI method\n");
+		return -ENOSYS;
 	}
 
 	acpi_evaluate_object(handle, method, &arg_list, NULL);
@@ -99,19 +87,19 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 		acpi_status status;
 		unsigned long long result;
 		const char *method = "\\WMI0.WQ00";
-		union acpi_object args[] = {
-				{ .type = ACPI_TYPE_INTEGER  },
-		};
-		args[0].integer.value = 0;
+		union acpi_object args[1];
 		struct acpi_object_list arg_list = {
-				.pointer = args,
-				.count = ARRAY_SIZE(args),
+			.pointer = args,
+			.count = ARRAY_SIZE(args),
 		};
+
+		args[0].type = ACPI_TYPE_INTEGER;
+		args[0].integer.value = 0;
 
 		status = acpi_evaluate_integer(ACPI_HANDLE(&inputdev->dev), (char *)method, &arg_list, &result);
 		if (ACPI_FAILURE(status)) {
-				dev_err(&inputdev->dev, "Unable to evaluate ACPI method %s\n", method);
-				return;
+			dev_err(&inputdev->dev, "Unable to evaluate ACPI method %s\n", method);
+			return;
 		}
 
 		code = result;
@@ -127,10 +115,9 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 	 * The MBXP handles backlight natively using ACPI,
 	 * but not the MBX. If MBXP is being used, skip reporting event.
 	 */
-	if ((key->sw.code == KEY_BRIGHTNESSUP ||
-				key->sw.code == KEY_BRIGHTNESSDOWN) &&
-				strcmp(event_guid, MBXP_EVENT_GUID) == 0)
-			return;
+	if ((key->sw.code == KEY_BRIGHTNESSUP || key->sw.code == KEY_BRIGHTNESSDOWN)
+			&& strcmp(event_guid, MBXP_EVENT_GUID) == 0)
+		return;
 
 	sparse_keymap_report_entry(inputdev, key, 1, true);
 }
@@ -192,7 +179,6 @@ static int huawei_wmi_input_init(void)
 
 	return 0;
 
-
 err_remove_notifier:
 	wmi_remove_notify_handler(event_guid);
 err_free_dev:
@@ -208,24 +194,16 @@ static void huawei_wmi_input_exit(void)
 
 static int __init huawei_wmi_init(void)
 {
-	int err;
-
 	if (wmi_has_guid(MBX_EVENT_GUID)) {
 		event_guid = MBX_EVENT_GUID;
 	} else if (wmi_has_guid(MBXP_EVENT_GUID)) {
 		event_guid = MBXP_EVENT_GUID;
 	} else {
-		pr_warn("No known WMI GUID found\n");
+		pr_warn("Compatible WMI GUID not found\n");
 		return -ENODEV;
 	}
 
-	err = huawei_wmi_input_init();
-	if (err) {
-		pr_err("Failed to setup input device\n");
-		return err;
-	}
-
-	return 0;
+	return huawei_wmi_input_init();
 }
 
 static void __exit huawei_wmi_exit(void)
