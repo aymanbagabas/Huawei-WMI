@@ -1,48 +1,21 @@
-From 6f1f33b69d92ad7bd3d2858cb299737209eae0b1 Mon Sep 17 00:00:00 2001
+From 10cff00f583756a22a1e94fb3b89a6f4be54bef5 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Wed, 7 Nov 2018 23:26:40 -0500
-Subject: [PATCH v3 3/3] ALSA: hda: add support for Huawei WMI micmute LED
+Subject: [PATCH v4 3/3] ALSA: hda: add support for Huawei WMI micmute LED
 
 Some of Huawei laptops come with a LED in the micmute key. This patch
 enables and disable this LED accordingly.
+This enables micmute LED for:
+1. Matebook X (19e5:3200), (19e5:3201)
+2. Matebook X Pro (19e5:3204)
 
 Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
 ---
- drivers/platform/x86/huawei_wmi.c            |  1 +
- include/linux/platform_data/x86/huawei_wmi.h |  9 ++++
- sound/pci/hda/huawei_wmi_helper.c            | 47 ++++++++++++++++++++
- sound/pci/hda/patch_realtek.c                | 13 +++++-
- 4 files changed, 69 insertions(+), 1 deletion(-)
- create mode 100644 include/linux/platform_data/x86/huawei_wmi.h
+ sound/pci/hda/huawei_wmi_helper.c | 47 +++++++++++++++++++++++++++++++
+ sound/pci/hda/patch_realtek.c     | 14 ++++++++-
+ 2 files changed, 60 insertions(+), 1 deletion(-)
  create mode 100644 sound/pci/hda/huawei_wmi_helper.c
 
-diff --git a/drivers/platform/x86/huawei_wmi.c b/drivers/platform/x86/huawei_wmi.c
-index 658c44ab2126..f06aa967c311 100644
---- a/drivers/platform/x86/huawei_wmi.c
-+++ b/drivers/platform/x86/huawei_wmi.c
-@@ -23,6 +23,7 @@
- #include <linux/input.h>
- #include <linux/input/sparse-keymap.h>
- #include <linux/module.h>
-+#include <linux/platform_data/x86/huawei_wmi.h>
- 
- MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
- MODULE_DESCRIPTION("Huawei WMI hotkeys");
-diff --git a/include/linux/platform_data/x86/huawei_wmi.h b/include/linux/platform_data/x86/huawei_wmi.h
-new file mode 100644
-index 000000000000..dd251780ee5c
---- /dev/null
-+++ b/include/linux/platform_data/x86/huawei_wmi.h
-@@ -0,0 +1,9 @@
-+/* SPDX-License-Identifier: GPL-2.0 */
-+#if IS_ENABLED(CONFIG_HUAWEI_LAPTOP)
-+#ifndef __HUAWEI_WMI_H__
-+#define __HUAWEI_WMI_H__
-+
-+int huawei_wmi_micmute_led_set(bool on);
-+
-+#endif
-+#endif
 diff --git a/sound/pci/hda/huawei_wmi_helper.c b/sound/pci/hda/huawei_wmi_helper.c
 new file mode 100644
 index 000000000000..7c91f914ffba
@@ -97,7 +70,7 @@ index 000000000000..7c91f914ffba
 +
 +#endif
 diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
-index ed6c9c79ce46..a0fdcfb0b635 100644
+index 135c0826859b..5431dee40f4f 100644
 --- a/sound/pci/hda/patch_realtek.c
 +++ b/sound/pci/hda/patch_realtek.c
 @@ -5374,6 +5374,9 @@ static void alc_fixup_thinkpad_acpi(struct hda_codec *codec,
@@ -140,14 +113,15 @@ index ed6c9c79ce46..a0fdcfb0b635 100644
  	},
  	[ALC269_FIXUP_ASUS_X101_FUNC] = {
  		.type = HDA_FIXUP_FUNC,
-@@ -6609,6 +6619,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
- 	SND_PCI_QUIRK(0x17aa, 0x5109, "Thinkpad", ALC269_FIXUP_LIMIT_INT_MIC_BOOST),
- 	SND_PCI_QUIRK(0x17aa, 0x511e, "Thinkpad", ALC298_FIXUP_TPT470_DOCK),
+@@ -6611,6 +6621,8 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
  	SND_PCI_QUIRK(0x17aa, 0x511f, "Thinkpad", ALC298_FIXUP_TPT470_DOCK),
-+	SND_PCI_QUIRK(0x19e5, 0x3200, "Huawei MBX", ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED),
- 	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_MBXP_PINS),
  	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Quanta FL1", ALC269_FIXUP_PCM_44K),
  	SND_PCI_QUIRK(0x17aa, 0x9e54, "LENOVO NB", ALC269_FIXUP_LENOVO_EAPD),
++	SND_PCI_QUIRK(0x19e5, 0x3200, "Huawei MBX", ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED),
++	SND_PCI_QUIRK(0x19e5, 0x3201, "Huawei MBX", ALC256_FIXUP_HUAWEI_WMI_MICMUTE_LED),
+ 	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_MBXP_PINS),
+ 	SND_PCI_QUIRK(0x1b7d, 0xa831, "Ordissimo EVE2 ", ALC269VB_FIXUP_ORDISSIMO_EVE2), /* Also known as Malata PC-B1303 */
+ 
 -- 
 2.17.2
 

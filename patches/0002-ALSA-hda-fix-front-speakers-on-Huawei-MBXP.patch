@@ -1,7 +1,7 @@
-From b1636326d48b757441461c060dee967a0771920f Mon Sep 17 00:00:00 2001
+From 885aa8407bb782a25b5d653802b334c1cf3fae64 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Wed, 7 Nov 2018 10:12:54 -0500
-Subject: [PATCH v3 2/3] ALSA: hda: fix front speakers on Huawei MBXP.
+Subject: [PATCH v4 2/3] ALSA: hda: fix front speakers on Huawei MBXP.
 
 This patch solves bug 200501 'Only 2 of 4 speakers playing sound.'
 https://bugzilla.kernel.org/show_bug.cgi?id=200501
@@ -15,7 +15,7 @@ Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
  1 file changed, 18 insertions(+)
 
 diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
-index fa61674a5605..ed6c9c79ce46 100644
+index fa61674a5605..135c0826859b 100644
 --- a/sound/pci/hda/patch_realtek.c
 +++ b/sound/pci/hda/patch_realtek.c
 @@ -5493,6 +5493,7 @@ enum {
@@ -49,14 +49,14 @@ index fa61674a5605..ed6c9c79ce46 100644
  	[ALC269_FIXUP_ASUS_X101_FUNC] = {
  		.type = HDA_FIXUP_FUNC,
  		.v.func = alc269_fixup_x101_headset_mic,
-@@ -6592,6 +6609,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
- 	SND_PCI_QUIRK(0x17aa, 0x5109, "Thinkpad", ALC269_FIXUP_LIMIT_INT_MIC_BOOST),
- 	SND_PCI_QUIRK(0x17aa, 0x511e, "Thinkpad", ALC298_FIXUP_TPT470_DOCK),
+@@ -6594,6 +6611,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
  	SND_PCI_QUIRK(0x17aa, 0x511f, "Thinkpad", ALC298_FIXUP_TPT470_DOCK),
-+	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_MBXP_PINS),
  	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Quanta FL1", ALC269_FIXUP_PCM_44K),
  	SND_PCI_QUIRK(0x17aa, 0x9e54, "LENOVO NB", ALC269_FIXUP_LENOVO_EAPD),
++	SND_PCI_QUIRK(0x19e5, 0x3204, "Huawei MBXP", ALC256_FIXUP_HUAWEI_MBXP_PINS),
  	SND_PCI_QUIRK(0x1b7d, 0xa831, "Ordissimo EVE2 ", ALC269VB_FIXUP_ORDISSIMO_EVE2), /* Also known as Malata PC-B1303 */
+ 
+ #if 0
 -- 
 2.17.2
 
