@@ -1,6 +1,0 @@
-evdev:atkbd:dmi:*
- KEYBOARD_KEY_f7=unknown      # Unknown associated with the hot keys
- KEYBOARD_KEY_f8=fn
-
-evdev:name:Huawei WMI hotkeys:*
- KEYBOARD_KEY_287=f20         # Mic mute button

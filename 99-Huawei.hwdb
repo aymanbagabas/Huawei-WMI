@@ -1,0 +1,6 @@
+evdev:atkbd:dmi:*
+ KEYBOARD_KEY_f7=unknown
+ KEYBOARD_KEY_f8=fn
+
+evdev:name:Huawei WMI hotkeys:*
+ KEYBOARD_KEY_287=f20         # Microphone mute button
