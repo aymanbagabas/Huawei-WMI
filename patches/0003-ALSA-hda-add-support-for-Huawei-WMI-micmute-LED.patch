@@ -1,7 +1,7 @@
 From 10cff00f583756a22a1e94fb3b89a6f4be54bef5 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Wed, 7 Nov 2018 23:26:40 -0500
-Subject: [PATCH v4 3/3] ALSA: hda: add support for Huawei WMI micmute LED
+Subject: [PATCH v5 3/3] ALSA: hda: add support for Huawei WMI micmute LED
 
 Some of Huawei laptops come with a LED in the micmute key. This patch
 enables and disable this LED accordingly.
@@ -27,8 +27,8 @@ index 000000000000..7c91f914ffba
 + * to be included from codec driver
 + */
 +
-+#if IS_ENABLED(CONFIG_HUAWEI_LAPTOP)
-+#include <linux/platform_data/x86/huawei_wmi.h>
++#if IS_ENABLED(CONFIG_HUAWEI_WMI)
++#include <linux/platform_data/x86/huawei-wmi.h>
 +
 +static int (*huawei_wmi_micmute_led_set_func)(bool);
 +

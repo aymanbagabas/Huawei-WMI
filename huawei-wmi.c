@@ -9,11 +9,11 @@
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
 #include <linux/module.h>
-//#include <linux/platform_data/x86/huawei_wmi.h>
+//#include <linux/platform_data/x86/huawei-wmi.h>
 
 MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
 MODULE_DESCRIPTION("Huawei WMI hotkeys");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 
 /*
  * Huawei WMI Events GUIDs
@@ -81,7 +81,7 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 
 	/*
 	 * MBX uses code 0x80 to indicate a hotkey event.
-	 * The actual key is fetched from the method WQ00
+	 * The actual key is fetched from the method WQ00.
 	 */
 	if (code == 0x80) {
 		acpi_status status;
@@ -124,10 +124,10 @@ static void huawei_wmi_process_key(struct input_dev *inputdev, int code)
 
 static void huawei_wmi_notify(u32 value, void *context)
 {
+	struct input_dev *inputdev = context;
 	struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 	acpi_status status;
-	struct input_dev *inputdev = (struct input_dev*)context;
 
 	status = wmi_get_event_data(value, &response);
 	if (ACPI_FAILURE(status)) {
@@ -160,8 +160,7 @@ static int huawei_wmi_input_init(void)
 	inputdev->phys = "wmi/input0";
 	inputdev->id.bustype = BUS_HOST;
 
-	err = sparse_keymap_setup(inputdev,
-			huawei_wmi_keymap, NULL);
+	err = sparse_keymap_setup(inputdev, huawei_wmi_keymap, NULL);
 	if (err)
 		goto err_free_dev;
 

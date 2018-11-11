@@ -1,7 +1,7 @@
 From 885aa8407bb782a25b5d653802b334c1cf3fae64 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Wed, 7 Nov 2018 10:12:54 -0500
-Subject: [PATCH v4 2/3] ALSA: hda: fix front speakers on Huawei MBXP.
+Subject: [PATCH v5 2/3] ALSA: hda: fix front speakers on Huawei MBXP.
 
 This patch solves bug 200501 'Only 2 of 4 speakers playing sound.'
 https://bugzilla.kernel.org/show_bug.cgi?id=200501
