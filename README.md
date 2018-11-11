@@ -35,5 +35,5 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 ## Contribution
 Fork, modify, and create a pull request.
 
-## Credit
+## Credits
 * Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) for testing the module on the MBX.
