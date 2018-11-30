@@ -3,4 +3,7 @@ evdev:atkbd:dmi:*
  KEYBOARD_KEY_f8=fn
 
 evdev:name:Huawei WMI hotkeys:*
+# Uncomment these if using Matebook X Pro
+# KEYBOARD_KEY_281=unknown
+# KEYBOARD_KEY_282=unknown
  KEYBOARD_KEY_287=f20         # Microphone mute button
