@@ -1,5 +1,5 @@
 # Huawei WMI Hotkeys Driver
-This Linux driver enables the extra keys on Huawei laptops. Supported laptops are:
+This Linux driver enables the extra keys on Huawei laptops. So far, it has been tested on these models:
 * Matebook X
 * Matebook X Pro
 
