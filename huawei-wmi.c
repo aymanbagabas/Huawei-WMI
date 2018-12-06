@@ -125,7 +125,7 @@ static void huawei_wmi_process_key(struct wmi_device *wdev, int code)
 			return;
 		}
 
-		status = acpi_evaluate_integer(NULL, "WQ00", &arg_list, &result);
+		status = acpi_evaluate_integer(handle, "WQ00", &arg_list, &result);
 		if (ACPI_FAILURE(status)) {
 			dev_err(&wdev->dev, "Unable to evaluate ACPI method\n");
 			return;
