@@ -13,10 +13,12 @@
 #include <linux/wmi.h>
 
 /*
- * Huawei WMI Events GUIDs
+ * Huawei WMI GUIDs
  */
 #define WMI0_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
 #define AMW0_EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
+
+#define WMI0_EXPENSIVE_GUID "39142400-C6A3-40fa-BADB-8A2652834100"
 
 struct huawei_wmi_priv {
 	struct input_dev *idev;
@@ -25,7 +27,7 @@ struct huawei_wmi_priv {
 	char *acpi_method;
 };
 
-static const struct key_entry huawei_wmi_keymap[] __initconst = {
+static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_KEY,    0x281, { KEY_BRIGHTNESSDOWN } },
 	{ KE_KEY,    0x282, { KEY_BRIGHTNESSUP } },
 	{ KE_KEY,    0x284, { KEY_MUTE } },
@@ -33,16 +35,16 @@ static const struct key_entry huawei_wmi_keymap[] __initconst = {
 	{ KE_KEY,    0x286, { KEY_VOLUMEUP } },
 	{ KE_KEY,    0x287, { KEY_MICMUTE } },
 	{ KE_KEY,    0x289, { KEY_WLAN } },
-	// Huawei |M| button
+	// Huawei |M| key
 	{ KE_KEY,    0x28a, { KEY_CONFIG } },
-	// Keyboard light
+	// Keyboard backlight
 	{ KE_IGNORE, 0x293, { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE, 0x294, { KEY_KBDILLUMUP } },
 	{ KE_IGNORE, 0x295, { KEY_KBDILLUMUP } },
 	{ KE_END,	 0 }
 };
 
-/*static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
+static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
 	struct huawei_wmi_priv *priv = dev_get_drvdata(led_cdev->dev->parent);
@@ -54,13 +56,16 @@ static const struct key_entry huawei_wmi_keymap[] __initconst = {
 	};
 
 	args[0].type = args[1].type = args[2].type = ACPI_TYPE_INTEGER;
-	args[0].integer.value = 0;
 	args[1].integer.value = 0x04;
-	args[2].integer.value = brightness ? 1 : 0;
 
-	if (strcmp(priv->acpi_method, "WPIN") == 0) {
+	if (strcmp(priv->acpi_method, "SPIN") == 0) {
+		args[0].integer.value = 0;
+		args[2].integer.value = brightness ? 1 : 0;
+	} else if (strcmp(priv->acpi_method, "WPIN") == 0) {
 		args[0].integer.value = 1;
 		args[2].integer.value = brightness ? 0 : 1;
+	} else {
+		return -EINVAL;
 	}
 
 	status = acpi_evaluate_object(priv->handle, priv->acpi_method, &arg_list, NULL);
@@ -69,15 +74,18 @@ static const struct key_entry huawei_wmi_keymap[] __initconst = {
 
 	return 0;
 }
-
+#if 0
 static int huawei_wmi_leds_setup(struct wmi_device *wdev)
 {
 	struct huawei_wmi_priv *priv = dev_get_drvdata(&wdev->dev);
 	acpi_status status;
 
-	// Skip registering LED subsystem if no ACPI method was found.
-	status = acpi_get_handle(priv->handle, "\\_SB.PCI0.LPCB.EC0", &priv->handle);
-	if (ACPI_FAILURE(status))
+	/* Skip registering LED subsystem if no ACPI method was found.
+	 * ec_get_handle() returns the first embedded controller device
+	 * handle which then used to locate SPIN and WPIN methods.
+	 */
+	priv->handle = ec_get_handle();
+	if (!priv->handle)
 		return 0;
 
 	if (acpi_has_method(priv->handle, "SPIN"))
@@ -93,10 +101,11 @@ static int huawei_wmi_leds_setup(struct wmi_device *wdev)
 	priv->cdev.default_trigger = "audio-micmute";
 	priv->cdev.brightness = ledtrig_audio_get(LED_AUDIO_MICMUTE);
 	priv->cdev.dev = &wdev->dev;
+	priv->cdev.flags = LED_CORE_SUSPENDRESUME;
 
 	return devm_led_classdev_register(&wdev->dev, &priv->cdev);
-}*/
-
+}
+#endif
 static void huawei_wmi_process_key(struct wmi_device *wdev, int code)
 {
 	struct huawei_wmi_priv *priv = dev_get_drvdata(&wdev->dev);
@@ -104,34 +113,23 @@ static void huawei_wmi_process_key(struct wmi_device *wdev, int code)
 
 	/*
 	 * WMI0 uses code 0x80 to indicate a hotkey event.
-	 * The actual key is fetched from the method WQ00.
+	 * The actual key is fetched from the method WQ00
+	 * using WMI0_EXPENSIVE_GUID.
 	 */
 	if (code == 0x80) {
+		struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
+		union acpi_object *obj;
 		acpi_status status;
-		acpi_handle handle;
-		unsigned long long result;
-		union acpi_object args[1];
-		struct acpi_object_list arg_list = {
-			.pointer = args,
-			.count = ARRAY_SIZE(args),
-		};
 
-		args[0].type = ACPI_TYPE_INTEGER;
-		args[0].integer.value = 0;
-
-		status = acpi_get_handle(NULL, "\\WMI0", &handle);
-		if (ACPI_FAILURE(status)) {
-			dev_err(&wdev->dev, "Unable to get ACPI handle\n");
+		status = wmi_query_block(WMI0_EXPENSIVE_GUID, 0, &response);
+		if (ACPI_FAILURE(status))
 			return;
-		}
 
-		status = acpi_evaluate_integer(handle, "WQ00", &arg_list, &result);
-		if (ACPI_FAILURE(status)) {
-			dev_err(&wdev->dev, "Unable to evaluate ACPI method\n");
-			return;
-		}
+		obj = (union acpi_object *)response.pointer;
+		if (obj && obj->type == ACPI_TYPE_INTEGER)
+			code = obj->integer.value;
 
-		code = result;
+		kfree(response.pointer);
 	}
 
 	key = sparse_keymap_entry_from_scancode(priv->idev, code);
@@ -190,8 +188,8 @@ static int huawei_wmi_probe(struct wmi_device *wdev)
 	err = huawei_wmi_input_setup(wdev);
 	if (err)
 		return err;
-
-	/*err = huawei_wmi_leds_setup(wdev);
+/*
+	err = huawei_wmi_leds_setup(wdev);
 	if (err)
 		return err;*/
 
@@ -213,23 +211,7 @@ static struct wmi_driver huawei_wmi_driver = {
 	.notify = huawei_wmi_notify,
 };
 
-static int __init huawei_wmi_init(void)
-{
-	if (!(wmi_has_guid(WMI0_EVENT_GUID) || wmi_has_guid(AMW0_EVENT_GUID))) {
-		pr_debug("Compatible WMI GUID not found\n");
-		return -ENODEV;
-	}
-
-	return wmi_driver_register(&huawei_wmi_driver);
-}
-
-static void __exit huawei_wmi_exit(void)
-{
-	wmi_driver_unregister(&huawei_wmi_driver);
-}
-
-module_init(huawei_wmi_init);
-module_exit(huawei_wmi_exit);
+module_wmi_driver(huawei_wmi_driver);
 
 MODULE_ALIAS("wmi:"WMI0_EVENT_GUID);
 MODULE_ALIAS("wmi:"AMW0_EVENT_GUID);

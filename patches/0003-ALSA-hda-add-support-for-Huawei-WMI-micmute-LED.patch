@@ -1,13 +1,14 @@
-From 9c14da146efac6797122e1ee7736af720e8dc962 Mon Sep 17 00:00:00 2001
+From f00f97f439c2825917f3af8bb3fda418b3e849d9 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Mon, 26 Nov 2018 18:10:01 -0500
-Subject: [PATCH v8 3/3] ALSA: hda: add support for Huawei WMI micmute LED
+Subject: [PATCH v10 3/3] ALSA: hda: add support for Huawei WMI micmute LED
 
 Some of Huawei laptops come with a LED in the micmute key. This patch
 enables the use of micmute LED for these devices:
 1. Matebook X (19e5:3200), (19e5:3201)
 2. Matebook X Pro (19e5:3204)
 
+Reviewed-by: Takashi Iwai <tiwai@suse.de>
 Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
 ---
  sound/pci/hda/patch_realtek.c | 6 +++++-
@@ -38,5 +39,5 @@ index 1326f32f4574..9766fd249bdf 100644
  	SND_PCI_QUIRK(0x1b7d, 0xa831, "Ordissimo EVE2 ", ALC269VB_FIXUP_ORDISSIMO_EVE2), /* Also known as Malata PC-B1303 */
  
 -- 
-2.19.1
+2.19.2
 
