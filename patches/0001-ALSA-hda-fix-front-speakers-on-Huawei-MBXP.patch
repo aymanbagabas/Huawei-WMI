@@ -1,7 +1,7 @@
-From 1ebe084be1d341e89ff9c85315c96a7d526ff421 Mon Sep 17 00:00:00 2001
+From 5d671b6210c2da2461988c7e6d515899107775ff Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Wed, 7 Nov 2018 10:12:54 -0500
-Subject: [PATCH v10 1/3] ALSA: hda: fix front speakers on Huawei MBXP.
+Subject: [PATCH v11 1/3] ALSA: hda: fix front speakers on Huawei MBXP.
 
 This patch solves bug 200501 'Only 2 of 4 speakers playing sound.'
 https://bugzilla.kernel.org/show_bug.cgi?id=200501
@@ -9,6 +9,7 @@ It enables the front speakers on Huawei Matebook X Pro laptops.
 These laptops come with Dolby Atmos sound system and these pins
 configuration enables the front speakers.
 
+Reviewed-by: Andy Shevchenko <andy.shevchenko@gmail.com>
 Reviewed-by: Takashi Iwai <tiwai@suse.de>
 Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
 ---
@@ -16,7 +17,7 @@ Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
  1 file changed, 18 insertions(+)
 
 diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
-index 993d34c141c2..1326f32f4574 100644
+index 993d34c141c2..77ee471a67e5 100644
 --- a/sound/pci/hda/patch_realtek.c
 +++ b/sound/pci/hda/patch_realtek.c
 @@ -5490,6 +5490,7 @@ enum {
@@ -45,7 +46,7 @@ index 993d34c141c2..1326f32f4574 100644
 +			{0x1e, 0x411111f0},
 +			{0x21, 0x04211020},
 +			{ }
-+		}
++		},
 +	},
  	[ALC269_FIXUP_ASUS_X101_FUNC] = {
  		.type = HDA_FIXUP_FUNC,

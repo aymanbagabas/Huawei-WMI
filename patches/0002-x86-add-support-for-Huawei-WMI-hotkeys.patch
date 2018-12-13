@@ -1,7 +1,7 @@
-From 3db6f325dd39ff5880dade47154bd81151c3737b Mon Sep 17 00:00:00 2001
+From 43776c6fc6df85b7a22c651e5fced1b145605bcd Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Mon, 26 Nov 2018 18:11:01 -0500
-Subject: [PATCH v10 2/3] x86: add support for Huawei WMI hotkeys.
+Subject: [PATCH v11 2/3] x86: add support for Huawei WMI hotkeys.
 
 This driver adds support for missing hotkeys on some Huawei laptops.
 Laptops such as the Matebook X have non functioning hotkeys. Whereas
@@ -25,13 +25,14 @@ user-space to handle. Which can be achieved by using "hwdb" tables and
 remap those keys to "unknown". This solution seems more natural to me
 because it leaves the decision to user-space.
 
+Acked-by: Andy Shevchenko <andy.shevchenko@gmail.com>
 Reviewed-by: Takashi Iwai <tiwai@suse.de>
 Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
 ---
  drivers/platform/x86/Kconfig      |  17 +++
  drivers/platform/x86/Makefile     |   1 +
- drivers/platform/x86/huawei-wmi.c | 220 ++++++++++++++++++++++++++++++
- 3 files changed, 238 insertions(+)
+ drivers/platform/x86/huawei-wmi.c | 208 ++++++++++++++++++++++++++++++
+ 3 files changed, 226 insertions(+)
  create mode 100644 drivers/platform/x86/huawei-wmi.c
 
 diff --git a/drivers/platform/x86/Kconfig b/drivers/platform/x86/Kconfig
@@ -76,10 +77,10 @@ index 39ae94135406..d841c550e3cc 100644
  obj-$(CONFIG_TC1100_WMI)	+= tc1100-wmi.o
 diff --git a/drivers/platform/x86/huawei-wmi.c b/drivers/platform/x86/huawei-wmi.c
 new file mode 100644
-index 000000000000..89ba7ea33499
+index 000000000000..59872f87b741
 --- /dev/null
 +++ b/drivers/platform/x86/huawei-wmi.c
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,208 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + *  Huawei WMI hotkeys
@@ -160,12 +161,7 @@ index 000000000000..89ba7ea33499
 +static int huawei_wmi_leds_setup(struct wmi_device *wdev)
 +{
 +	struct huawei_wmi_priv *priv = dev_get_drvdata(&wdev->dev);
-+	acpi_status status;
 +
-+	/* Skip registering LED subsystem if no ACPI method was found.
-+	 * ec_get_handle() returns the first embedded controller device
-+	 * handle which then used to locate SPIN and WPIN methods.
-+	 */
 +	priv->handle = ec_get_handle();
 +	if (!priv->handle)
 +		return 0;
@@ -250,11 +246,7 @@ index 000000000000..89ba7ea33499
 +	if (err)
 +		return err;
 +
-+	err = input_register_device(priv->idev);
-+	if (err)
-+		return err;
-+
-+	return 0;
++	return input_register_device(priv->idev);
 +}
 +
 +static int huawei_wmi_probe(struct wmi_device *wdev)
@@ -265,17 +257,14 @@ index 000000000000..89ba7ea33499
 +	priv = devm_kzalloc(&wdev->dev, sizeof(struct huawei_wmi_priv), GFP_KERNEL);
 +	if (!priv)
 +		return -ENOMEM;
++
 +	dev_set_drvdata(&wdev->dev, priv);
 +
 +	err = huawei_wmi_input_setup(wdev);
 +	if (err)
 +		return err;
 +
-+	err = huawei_wmi_leds_setup(wdev);
-+	if (err)
-+		return err;
-+
-+	return 0;
++	return huawei_wmi_leds_setup(wdev);
 +}
 +
 +static const struct wmi_device_id huawei_wmi_id_table[] = {

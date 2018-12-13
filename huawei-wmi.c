@@ -43,7 +43,7 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_IGNORE, 0x295, { KEY_KBDILLUMUP } },
 	{ KE_END,	 0 }
 };
-
+#if 0
 static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
@@ -74,16 +74,11 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 
 	return 0;
 }
-#if 0
+
 static int huawei_wmi_leds_setup(struct wmi_device *wdev)
 {
 	struct huawei_wmi_priv *priv = dev_get_drvdata(&wdev->dev);
-	acpi_status status;
 
-	/* Skip registering LED subsystem if no ACPI method was found.
-	 * ec_get_handle() returns the first embedded controller device
-	 * handle which then used to locate SPIN and WPIN methods.
-	 */
 	priv->handle = ec_get_handle();
 	if (!priv->handle)
 		return 0;
@@ -168,11 +163,7 @@ static int huawei_wmi_input_setup(struct wmi_device *wdev)
 	if (err)
 		return err;
 
-	err = input_register_device(priv->idev);
-	if (err)
-		return err;
-
-	return 0;
+	return input_register_device(priv->idev);
 }
 
 static int huawei_wmi_probe(struct wmi_device *wdev)
@@ -183,16 +174,14 @@ static int huawei_wmi_probe(struct wmi_device *wdev)
 	priv = devm_kzalloc(&wdev->dev, sizeof(struct huawei_wmi_priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
+
 	dev_set_drvdata(&wdev->dev, priv);
 
 	err = huawei_wmi_input_setup(wdev);
 	if (err)
 		return err;
-/*
-	err = huawei_wmi_leds_setup(wdev);
-	if (err)
-		return err;*/
 
+	/*return huawei_wmi_leds_setup(wdev);*/
 	return 0;
 }
 

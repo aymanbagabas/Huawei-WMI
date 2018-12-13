@@ -1,29 +1,28 @@
-From f00f97f439c2825917f3af8bb3fda418b3e849d9 Mon Sep 17 00:00:00 2001
+From 1f258abdc9c62ec6302bcc592c29780eef33b279 Mon Sep 17 00:00:00 2001
 From: Ayman Bagabas <ayman.bagabas@gmail.com>
 Date: Mon, 26 Nov 2018 18:10:01 -0500
-Subject: [PATCH v10 3/3] ALSA: hda: add support for Huawei WMI micmute LED
+Subject: [PATCH v11 3/3] ALSA: hda: add support for Huawei WMI micmute LED
 
 Some of Huawei laptops come with a LED in the micmute key. This patch
 enables the use of micmute LED for these devices:
 1. Matebook X (19e5:3200), (19e5:3201)
 2. Matebook X Pro (19e5:3204)
 
+Reviewed-by: Andy Shevchenko <andy.shevchenko@gmail.com>
 Reviewed-by: Takashi Iwai <tiwai@suse.de>
 Signed-off-by: Ayman Bagabas <ayman.bagabas@gmail.com>
 ---
- sound/pci/hda/patch_realtek.c | 6 +++++-
- 1 file changed, 5 insertions(+), 1 deletion(-)
+ sound/pci/hda/patch_realtek.c | 4 ++++
+ 1 file changed, 4 insertions(+)
 
 diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
-index 1326f32f4574..9766fd249bdf 100644
+index 77ee471a67e5..9766fd249bdf 100644
 --- a/sound/pci/hda/patch_realtek.c
 +++ b/sound/pci/hda/patch_realtek.c
-@@ -5776,7 +5776,9 @@ static const struct hda_fixup alc269_fixups[] = {
- 			{0x1e, 0x411111f0},
+@@ -5777,6 +5777,8 @@ static const struct hda_fixup alc269_fixups[] = {
  			{0x21, 0x04211020},
  			{ }
--		}
-+		},
+ 		},
 +		.chained = true,
 +		.chain_id = ALC255_FIXUP_MIC_MUTE_LED
  	},
