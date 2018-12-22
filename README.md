@@ -4,6 +4,10 @@ This Linux driver enables the extra keys on Huawei laptops. So far, it has been 
 * Matebook X Pro
 
 ## Installation
+You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules.
+
+OR build it from source.
+
 1. Make sure you have your kernel headers. In Fedora it would be:
 ```
 # dnf install kernel-headers
