@@ -31,7 +31,7 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 ```
 
 ## TODO
-* Merge driver into upstream
+* ~~Merge driver into upstream~~ Merged in Linux 4.21
 * ~~Getting device LEDs to work~~ See `0003-ALSA-hda-add-support-for-Huawei-WMI-micmute-LED.patch`
 * Support more devices
 * ACPI driver?
@@ -40,4 +40,4 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 Fork, modify, and create a pull request.
 
 ## Credits
-* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) for testing the module on the MBX.
+* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan Baer [@janbaer](https://github.com/janbaer) for testing the module on the MBX.
