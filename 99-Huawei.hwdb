@@ -1,9 +1,10 @@
-evdev:atkbd:dmi:*
+# Huawei MACH-WX9
+evdev:atkbd:dmi:bvn*:bvr*:svnHUAWEI*:pnMACH-WX9:pvr*
  KEYBOARD_KEY_f7=unknown
  KEYBOARD_KEY_f8=fn
+ KEYBOARD_KEY_281=unknown
+ KEYBOARD_KEY_282=unknown
 
-evdev:name:Huawei WMI hotkeys:*
-# Uncomment these if using Matebook X Pro
-# KEYBOARD_KEY_281=unknown
-# KEYBOARD_KEY_282=unknown
- KEYBOARD_KEY_287=f20         # Microphone mute button
+# Huawei microphone mute
+evdev:name:Huawei WMI hotkeys:dmi:bvn*:bvr*:bd*:svnHUAWEI*:pnMACH*
+ KEYBOARD_KEY_287=f20         # Microphone mute button, should be micmute
