@@ -4,6 +4,10 @@ This Linux driver enables the extra keys on Huawei laptops. So far, it has been 
 * Matebook X Pro
 
 ## Installation
+You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules.
+
+OR build it from source.
+
 1. Make sure you have your kernel headers. In Fedora it would be:
 ```
 # dnf install kernel-headers
@@ -27,7 +31,7 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 ```
 
 ## TODO
-* Merge driver into upstream
+* ~~Merge driver into upstream~~ Merged in Linux 4.21
 * ~~Getting device LEDs to work~~ See `0003-ALSA-hda-add-support-for-Huawei-WMI-micmute-LED.patch`
 * Support more devices
 * ACPI driver?
@@ -36,4 +40,4 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 Fork, modify, and create a pull request.
 
 ## Credits
-* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) for testing the module on the MBX.
+* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan Baer [@janbaer](https://github.com/janbaer) for testing the module on the MBX.
