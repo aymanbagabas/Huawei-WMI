@@ -1,3 +1,5 @@
+**NOTE: Since this driver is now part of the Linux kernel, this repository will be used for testing and development purposes.**
+
 # Huawei WMI Hotkeys Driver
 This Linux driver enables the extra keys on Huawei laptops. So far, it has been tested on these models:
 * Matebook X
@@ -24,6 +26,8 @@ $ sudo make install
 ```
 
 ## Keyboard
+**NOTE: Ignore this if you're running `systemd` > 240.**
+
 One of the keys, `micmute`, wouldn't work after inserting the module and that is due to an issue with X.Org. The solution would be to remap it to using `udev` hwdb tables.
 Copy `99-Huawei.hwdb` to `/etc/udev/hwdb.d/` then update the hwdb tables:
 ```
@@ -31,7 +35,7 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 ```
 
 ## TODO
-* ~~Merge driver into upstream~~ Merged in Linux 4.21
+* ~~Merge driver into upstream~~ Merged in Linux > 4.20. [Commit log](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/drivers/platform/x86/huawei-wmi.c)
 * ~~Getting device LEDs to work~~ See `0003-ALSA-hda-add-support-for-Huawei-WMI-micmute-LED.patch`
 * Support more devices
 * ACPI driver?
