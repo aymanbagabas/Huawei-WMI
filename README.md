@@ -26,7 +26,7 @@ $ sudo make install
 ```
 
 ## Keyboard
-**NOTE: Ignore this if you're running `systemd` > 240.**
+**NOTE: Ignore this if you're running `systemd-udev` > 240.**
 
 One of the keys, `micmute`, wouldn't work after inserting the module and that is due to an issue with X.Org. The solution would be to remap it to using `udev` hwdb tables.
 Copy `99-Huawei.hwdb` to `/etc/udev/hwdb.d/` then update the hwdb tables:
