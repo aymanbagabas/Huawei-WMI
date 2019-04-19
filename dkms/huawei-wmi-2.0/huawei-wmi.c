@@ -43,7 +43,7 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_IGNORE, 0x295, { KEY_KBDILLUMUP } },
 	{ KE_END,	 0 }
 };
-#if 0
+
 static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
@@ -100,7 +100,7 @@ static int huawei_wmi_leds_setup(struct wmi_device *wdev)
 
 	return devm_led_classdev_register(&wdev->dev, &priv->cdev);
 }
-#endif
+
 static void huawei_wmi_process_key(struct wmi_device *wdev, int code)
 {
 	struct huawei_wmi_priv *priv = dev_get_drvdata(&wdev->dev);
@@ -181,7 +181,7 @@ static int huawei_wmi_probe(struct wmi_device *wdev)
 	if (err)
 		return err;
 
-	/*return huawei_wmi_leds_setup(wdev);*/
+	return huawei_wmi_leds_setup(wdev);
 	return 0;
 }
 

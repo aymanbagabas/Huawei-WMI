@@ -1,3 +1,4 @@
+
 obj-m		:= huawei-wmi.o 
 KERN_SRC	:= /lib/modules/$(shell uname -r)/build/
 PWD			:= $(shell pwd)

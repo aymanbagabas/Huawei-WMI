@@ -5,6 +5,8 @@ This Linux driver enables the extra keys on Huawei laptops. So far, it has been 
 * Matebook X
 * Matebook X Pro
 
+This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refere back to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
+
 ## Installation
 You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules.
 
