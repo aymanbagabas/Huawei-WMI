@@ -14,7 +14,7 @@ OR build it from source.
 
 1. Make sure you have your kernel headers. In Fedora it would be:
 ```
-# dnf install kernel-headers
+# dnf install kernel-headers kernel-devel
 ```
 Should be similar in other distributions.
 
