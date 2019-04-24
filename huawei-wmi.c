@@ -27,11 +27,11 @@
 /* AMW0_commands */
 
 enum wmaa_cmd {
-	BATTERY_GET, /* \GBTT */
-	BATTERY_SET, /* \SBTT */
-	FN_LOCK_GET, /* \GFRS */
-	FN_LOCK_SET, /* \SFRS */
-	MICMUTE_LED, /* \SMLS */
+	BATTERY_GET, /* \GBTT 0x00001103 */
+	BATTERY_SET, /* \SBTT 0xXXYY1003 */
+	FN_LOCK_GET, /* \GFRS 0x00000604 */
+	FN_LOCK_SET, /* \SFRS 0x000X0704 */
+	MICMUTE_LED, /* \SMLS 0x000X0b04 */
 };
 
 struct amw0_arg {
@@ -39,23 +39,6 @@ struct amw0_arg {
 	u8 arg1;
 	u8 arg2;
 	u8 arg3;
-};
-
-struct amw0_ret {
-	u8 arg0;
-	u8 arg1;
-	u8 arg2;
-};
-
-	/*BATTERY_PROT_SET = 0x00001003,*/
-	/*BATTERY_PROT_GET = 0x00001103,*/
-	/*FNLK_GET = 0x00000604,*/
-	/*FNLK_SET = 0x00000704,*/
-	/*MICMUTE_LED_SET = 0x00000b04,*/
-
-enum thresh {
-	THRESHOLD_START,
-	THRESHOLD_STOP,
 };
 
 enum fn_state {
@@ -87,13 +70,67 @@ static const struct key_entry huawei_wmi_keymap[] = {
 
 /* Utils */
 
-static int huawei_wmi_exec(enum wmaa_cmd cmd, struct amw0_arg *arg, struct amw0_ret *ret)
+static int huawei_wmi_eval(struct amw0_arg *arg, void *buf, size_t buflen)
 {
 	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
 	struct acpi_buffer in;
 	union acpi_object *obj;
 	acpi_status status;
+	size_t len;
 
+	in.length = sizeof(struct amw0_arg);
+	in.pointer = (u32 *)arg;
+	status = wmi_evaluate_method(AMW0_METHOD_GUID, 0, 1, &in, &out);
+	if (ACPI_FAILURE(status)) {
+		dev_err(&huawei->pdev->dev, "Failed to evaluate wmi method\n");
+		return -ENODEV;
+	}
+
+	/* WMAA returns a package with two buffer elements. The first buffer
+	 * is 4 bytes long and the second is 0x100 (256) bytes long. The
+	 * first buffer is always zeros. The second stores the output
+	 * from every call. The first byte of the second buffer always
+	 * have the return status of the called command.
+	 */
+	obj = out.pointer;
+	if (!obj)
+		return -ENODEV;
+	if (obj->type != ACPI_TYPE_PACKAGE) {
+		dev_err(&huawei->pdev->dev, "Unknown response type %d\n", obj->type);
+		kfree(obj);
+		return -ENODEV;
+	}
+	if (obj->package.count != 2) {
+		dev_err(&huawei->pdev->dev, "Unknown package count %d\n", obj->package.count);
+		kfree(obj);
+		return -ENODEV;
+	}
+
+	obj = &(obj->package.elements[1]);
+	if (!obj || obj->type != ACPI_TYPE_BUFFER) {
+		dev_err(&huawei->pdev->dev, "Unknown response type %d\n", obj->type);
+		kfree(out.pointer);
+		return -ENODEV;
+	}
+
+	if (buf) {
+		len = min(buflen, obj->buffer.length);
+		memcpy(buf, obj->buffer.pointer, len);
+	}
+	kfree(out.pointer);
+
+	return 0;
+}
+
+static int huawei_wmi_cmd(enum wmaa_cmd cmd, struct amw0_arg *arg, void *out, size_t outlen)
+{
+	u8 buf[0x100] = { 0 };
+	int err;
+
+	if (!arg) {
+		struct amw0_arg parm;
+		arg = &parm;
+	}
 	switch (cmd) {
 		case BATTERY_SET:
 			arg->arg0 = 0x03;
@@ -116,38 +153,37 @@ static int huawei_wmi_exec(enum wmaa_cmd cmd, struct amw0_arg *arg, struct amw0_
 			arg->arg1 = 0x0b;
 			break;
 		default:
-			pr_err("Invalid command\n");
+			pr_err("Command not supported\n");
 			return -EINVAL;
 	}
-	pr_debug("wmi exec 0x%x 0x%x 0x%x 0x%x\n", arg->arg0, arg->arg1, arg->arg2, arg->arg3);
-	pr_debug("wmi exec 0x%08x\n", *arg);
+	pr_info("wmi exec 0x%x 0x%x 0x%x 0x%x\n", arg->arg0, arg->arg1, arg->arg2, arg->arg3);
+	pr_info("wmi exec 0x%08x\n", *arg);
 
-	in.length = sizeof(struct amw0_arg);
-	in.pointer = (u32 *)arg;
-	status = wmi_evaluate_method(AMW0_METHOD_GUID, 0, 1, &in, &out);
-	if (ACPI_FAILURE(status)) {
-		dev_err(&huawei->pdev->dev, "Failed to execute wmi method\n");
-		return -ENODEV;
-	}
-
-	obj = out.pointer;
-	if (!obj || obj->type != ACPI_TYPE_PACKAGE) {
-		dev_err(&huawei->pdev->dev, "Invalid acpi_object: expected 0x%x got 0x%x\n",
-				ACPI_TYPE_BUFFER, obj->type);
-		return -EINVAL;
-	}
-
-	// TODO: cleanup
-	if (ret && obj->package.count >= 2) {
-		union acpi_object *elem = &(obj->package.elements[1]);
-		if (elem->type != ACPI_TYPE_BUFFER) {
-			return -EINVAL;
+	/* Some models require calling WMAA twice to execute
+	 * a command. We call WMAA and if we get a non-zero return
+	 * status we evaluate WMAA again. If we get another non-zero
+	 * return, we return -ENXIO. This way we don't need to 
+	 * check for return status anywhere we call huawei_wmi_cmd.
+	 */
+	err = huawei_wmi_eval(arg, buf, 0x100);
+	if (err)
+		return err;
+	if (*buf) {
+		err = huawei_wmi_eval(arg, buf, 0x100);
+		if (err) {
+			return err;
 		}
-		memcpy(ret, elem->buffer.pointer, sizeof(struct amw0_ret));
+		if (*buf) {
+			dev_err(&huawei->pdev->dev, "Invalid command, got: %d\n", *buf);
+			return -ENXIO;
+		}
 	}
-
-	kfree(obj);
-
+	if (out)
+		memcpy(out, buf, outlen);
+	pr_info(" Buffer:\n");
+	int i;
+	for(i = 0; i < 10; i++)
+		pr_info(" 0x%x\n", buf[i]);
 	return 0;
 }
 
@@ -157,14 +193,11 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
 	struct amw0_arg arg = { 0, 0, brightness, 0 };
-	return huawei_wmi_exec(MICMUTE_LED, &arg, NULL);
-
+	return huawei_wmi_cmd(MICMUTE_LED, &arg, NULL, NULL);
 }
 
 static int huawei_wmi_leds_setup(struct huawei_wmi_priv *priv)
 {
-	pr_debug("leds setup\n");
-
 	priv->cdev.name = "platform::micmute";
 	priv->cdev.max_brightness = 1;
 	priv->cdev.brightness_set_blocking = huawei_wmi_micmute_led_set;
@@ -226,7 +259,6 @@ static int huawei_wmi_input_probe(struct wmi_device *wdev)
 {
 	struct input_dev *idev;
 	int err;
-	pr_debug("wmi probe\n");
 
 	idev = devm_input_allocate_device(&wdev->dev);
 	if (!idev)
@@ -273,133 +305,73 @@ static struct wmi_driver huawei_wmi_input_driver = {
 
 /* Battery protection */
 
-static int huawei_wmi_battery_get(enum thresh thresh, int *val)
+static int huawei_wmi_battery_get(int *low, int *high)
 {
-	struct amw0_arg arg = { 0, 0, 0, 0 };
-	struct amw0_ret ret = { 0, 0, 0 };
-	int err;
+	struct amw0_arg ret;
+	long err;
 
-	err = huawei_wmi_exec(BATTERY_GET, &arg, &ret);
+	err = huawei_wmi_cmd(BATTERY_GET, NULL, &ret, sizeof(struct amw0_arg));
 	if (err)
-		return err;
-	pr_debug("bat get %d %d %d\n", ret.arg0, ret.arg1, ret.arg2);
-	pr_debug("bat get 0x%06x\n", ret);
-	pr_debug("bat get 0x%08x\n", arg);
+		return -EINVAL;
 
-	switch (thresh) {
-		case THRESHOLD_START:
-			*val = ret.arg1;
-			break;
-		case THRESHOLD_STOP:
-			*val = ret.arg2;
-			break;
-		default:
-			pr_err("Invalid arguments\n");
-			return -EINVAL;
+	/* Returned buffer positions are either 0x03 and 0x02
+	 * or 0x02 and 0x01. 0x00 reserved for return status.
+	 */
+	if (ret.arg3) {
+		*high = ret.arg3;
+		*low = ret.arg2;
+	} else if (ret.arg2) {
+		*high = ret.arg2;
+		*low = ret.arg1;
+	} else if (ret.arg1) {
+		*low = ret.arg1;
 	}
 
-	return ret.arg0;
+	return 0;
 }
 
-static int huawei_wmi_battery_set(enum thresh thresh, int *val)
+static int huawei_wmi_battery_set(int low, int high)
 {
-	struct amw0_arg arg = { 0, 0, 0, 0 };
-	struct amw0_ret ret = { 0, 0, 0 };
-	int err, tmp;
-
-	// TODO: cleanup
-	switch (thresh) {
-		case THRESHOLD_START:
-			err = huawei_wmi_battery_get(THRESHOLD_STOP, &tmp);
-			if (err)
-				return -EINVAL;
-
-			arg.arg2 = *val;
-			arg.arg3 = tmp;
-			break;
-		case THRESHOLD_STOP:
-			err = huawei_wmi_battery_get(THRESHOLD_START, &tmp);
-			if (err)
-				return -EINVAL;
-
-			arg.arg2 = tmp;
-			arg.arg3 = *val;
-			break;
-		default:
-			pr_err("Invalid argument\n");
-			return -EINVAL;
-	}
-	err = huawei_wmi_exec(BATTERY_SET, &arg, &ret);
-	if (err)
-		return err;
-
-	pr_debug("bat set %d %d %d %d\n", arg.arg0, arg.arg1, arg.arg2, arg.arg3);
-	pr_debug("bat set 0x%08x\n", arg);
-
-	return ret.arg0;
+	struct amw0_arg arg = { 0, 0, low, high };
+	return huawei_wmi_cmd(BATTERY_SET, &arg, NULL, NULL);
 }
 
-static int huawei_wmi_fn_lock_get(int *val)
+static int huawei_wmi_fn_lock_get(int *on)
 {
-	struct amw0_arg arg = { 0, 0, 0, 0 };
-	struct amw0_ret ret = { 0, 0, 0 };
+	struct amw0_arg ret;
 	int err;
 
-	err = huawei_wmi_exec(FN_LOCK_GET, &arg, &ret);
+	err = huawei_wmi_cmd(FN_LOCK_GET, NULL, &ret, sizeof(struct amw0_arg));
 	if (err)
-		return err;
+		return -EINVAL;
 
-	*val = (ret.arg1 == FN_LOCK_OFF) ? 0 : 1;
+	if (ret.arg3)
+		*on = (ret.arg3 == FN_LOCK_OFF) ? 0 : 1;
+	else if (ret.arg2)
+		*on = (ret.arg2 == FN_LOCK_OFF) ? 0 : 1;
+	else if (ret.arg1)
+		*on = (ret.arg1 == FN_LOCK_OFF) ? 0 : 1;
 
-	pr_debug("fn get %d %d %d %d\n", arg.arg0, arg.arg1, arg.arg2, arg.arg3);
-	pr_debug("fn get 0x%08x\n", arg);
-
-	return ret.arg0;
+	return 0;
 }
 
-static int huawei_wmi_fn_lock_set(int *val)
+static int huawei_wmi_fn_lock_set(int on)
 {
-	struct amw0_arg arg = { 0, 0, 0, 0 };
-	struct amw0_ret ret = { 0, 0, 0 };
-	int err;
-
-	arg.arg2 = (*val) ? FN_LOCK_ON : FN_LOCK_OFF;
-	err = huawei_wmi_exec(FN_LOCK_SET, &arg, &ret);
-	if (err)
-		return err;
-	pr_debug("fn set %d %d %d %d\n", arg.arg0, arg.arg1, arg.arg2, arg.arg3);
-	pr_debug("fn set 0x%08x\n", arg);
-	
-	return ret.arg0;
+	struct amw0_arg arg = { 0, 0, (on) ? FN_LOCK_ON : FN_LOCK_OFF, 0 };
+	return huawei_wmi_cmd(FN_LOCK_SET, &arg, NULL, NULL);
 }
 
 /* sysfs */
 
-static ssize_t charge_start_threshold_store(struct device *dev,
+static ssize_t charge_thresholds_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size) {
-	int err, val;
+	int low, high;
 
-	err = kstrtoint(buf, 10, &val);
-	if (err)
-		return err;
-	if (val < 0 || val > 99 ||
-			huawei_wmi_battery_set(THRESHOLD_START, &val))
-		return -EINVAL;
-
-	return size;
-}
-
-static ssize_t charge_stop_threshold_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size) {
-	int err, val;
-
-	err = kstrtoint(buf, 10, &val);
-	if (err)
-		return err;
-	if (val < 1 || val > 100 ||
-			huawei_wmi_battery_set(THRESHOLD_STOP, &val))
+	if (sscanf(buf, "%d %d", &low, &high) != 2 ||
+			low < 0 || low > 100 ||
+			high < 0 || high > 100 ||
+			huawei_wmi_battery_set(low, high))
 		return -EINVAL;
 
 	return size;
@@ -408,62 +380,47 @@ static ssize_t charge_stop_threshold_store(struct device *dev,
 static ssize_t fn_lock_state_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size) {
-	int err, val;
+	int on;
 
-	err = kstrtoint(buf, 10, &val);
-	if (err)
-		return err;
-	pr_debug("fn store %d\n", val);
-	if (val < 0 || val > 1 ||
-			huawei_wmi_fn_lock_set(&val))
+	if (kstrtoint(buf, 10, &on) ||
+			on < 0 || on > 1 ||
+			huawei_wmi_fn_lock_set(on))
 		return -EINVAL;
 
 	return size;
 }
 
-static ssize_t charge_start_threshold_show(struct device *dev,
+static ssize_t charge_thresholds_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf) {
-	int err, val;
+	int err, low, high;
 
-	err = huawei_wmi_battery_get(THRESHOLD_START, &val);
+	low = high = 0;
+	err = huawei_wmi_battery_get(&low, &high);
 	if (err)
-		return err;
+		return -EINVAL;
 
-	return sprintf(buf, "%d\n", val);
-}
-
-static ssize_t charge_stop_threshold_show(struct device *dev,
-		struct device_attribute *attr,
-		char *buf) {
-	int err, val;
-
-	err = huawei_wmi_battery_get(THRESHOLD_STOP, &val);
-	if (err)
-		return err;
-
-	return sprintf(buf, "%d\n", val);
+	return sprintf(buf, "%d %d\n", low, high);
 }
 
 static ssize_t fn_lock_state_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf) {
-	int err, val;
+	int err, on;
 
-	err = huawei_wmi_fn_lock_get(&val);
+	on = 0;
+	err = huawei_wmi_fn_lock_get(&on);
 	if (err)
-		return err;
+		return -EINVAL;
 
-	return sprintf(buf, "%d\n", val);
+	return sprintf(buf, "%d\n", on);
 }
 
-static DEVICE_ATTR_RW(charge_start_threshold);
-static DEVICE_ATTR_RW(charge_stop_threshold);
+static DEVICE_ATTR_RW(charge_thresholds);
 static DEVICE_ATTR_RW(fn_lock_state);
 
 static struct attribute *huawei_wmi_attrs[] = {
-	&dev_attr_charge_start_threshold.attr,
-	&dev_attr_charge_stop_threshold.attr,
+	&dev_attr_charge_thresholds.attr,
 	&dev_attr_fn_lock_state.attr,
 	NULL
 };
@@ -488,56 +445,70 @@ static __init int huawei_wmi_init(void)
 	if (!huawei)
 		return -ENOMEM;
 
-	pr_debug("start init\n");
+	pr_info("start init\n");
 	err = platform_driver_register(&huawei_wmi_driver);
 	if (err) {
 		pr_err("Failed to register platform driver\n");
-		return err;
+		goto fail_pfdrv;
 	}
-	pr_debug("done pf driver\n");
+	pr_info("done pf driver\n");
 
 	huawei->pdev = platform_device_register_simple("huawei-wmi", -1, NULL, 0);
 	if (IS_ERR(huawei->pdev)) {
 		pr_err("Failed to register platform device\n");
 		err = PTR_ERR(huawei->pdev);
-		huawei->pdev = NULL;
-		return err;
+		goto fail_pfdev;
 	}
-	pr_debug("done pf dev\n");
+	pr_info("done pf dev\n");
+
+	// TODO: add quirks
 
 	platform_set_drvdata(huawei->pdev, huawei);
 
 	err = wmi_driver_register(&huawei_wmi_input_driver);
 	if (err) {
 		pr_err("Failed to register wmi driver\n");
-		return err;
+		goto fail_input;
 	}
-	pr_debug("done wmi dri\n");
+	pr_info("done wmi dri\n");
 	
 	// TODO: check laptop capabilities and features
 	err = sysfs_create_group(&huawei->pdev->dev.kobj, &huawei_wmi_group);
 	if (err)
-		return err;
-	err = huawei_wmi_leds_setup(huawei);
+		goto fail_sysfs;
 
+	err = huawei_wmi_leds_setup(huawei);
 	if (err) {
 		pr_err("Failed to register leds\n");
-		return err;
+		goto fail_leds;
 	}
-	pr_debug("finish init\n");
+	pr_info("finish init\n");
 
 	return 0;
+
+fail_leds:
+	sysfs_remove_group(&huawei->pdev->dev.kobj, &huawei_wmi_group);
+fail_sysfs:
+	wmi_driver_unregister(&huawei_wmi_input_driver);
+fail_input:
+	platform_device_unregister(huawei->pdev);
+fail_pfdev:
+	huawei->pdev = NULL;
+	platform_driver_unregister(&huawei_wmi_driver);
+fail_pfdrv:
+	kfree(huawei);
+	return err;
 }
 
 static __exit void huawei_wmi_exit(void)
 {
-	pr_debug("start exit\n");
+	pr_info("start exit\n");
 	sysfs_remove_group(&huawei->pdev->dev.kobj, &huawei_wmi_group);
 	wmi_driver_unregister(&huawei_wmi_input_driver);
 	platform_device_unregister(huawei->pdev);
 	platform_driver_unregister(&huawei_wmi_driver);
 	kfree(huawei);
-	pr_debug("finish exit\n");
+	pr_info("finish exit\n");
 }
 
 module_init(huawei_wmi_init);
