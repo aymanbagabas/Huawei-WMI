@@ -1,31 +1,42 @@
-**NOTE: Since this driver is now part of the Linux kernel, this repository will be used for testing and development purposes.**
+**NOTE: Since this driver made it to mainline kernel, this repository will be used for testing and development purposes.**
 
-# Huawei WMI Hotkeys Driver
-This Linux driver enables the extra keys on Huawei laptops. So far, it has been tested on these models:
-* Matebook X
-* Matebook X Pro
+# Huawei WMI laptop extras driver
+This driver adds support for some of the missing features found on Huawei laptops. It implements Windows Management Instrumentation (WMI) device mapping to kernel. Supported features are:
+* Function hotkeys
+* Micmute LED
+* Battery protection
+* Fn-lock
+
+Battery protection and Fn-lock can be accessed from `/sys/devices/huawei-wmi/{charge_thresholds,fn_lock_state}`
 
 This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refere back to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
+
+Check out [matebook-applet](https://github.com/nekr0z/matebook-applet).
 
 ## Installation
 Make sure you're using kernel >= 5.0. You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules.
 
 OR build it from source.
 
-1. Make sure you have your kernel headers. In Fedora it would be:
+1. Make sure you have your kernel headers. In Fedora that would be:
+
 ```
-# dnf install kernel-headers kernel-devel
+$ sudo dnf install kernel-headers kernel-devel
 ```
 Should be similar in other distributions.
 
-2. Clone and install the module.
+2. Clone and *update* the module.
 
 ```
 $ git clone https://github.com/aymanbagabas/Huawei-WMI
 $ cd Huawei-WMI
 $ make
-$ sudo make install
+$ sudo cp huawei-wmi.ko /lib/modules/$(uname -r)/updates/
+$ sudo depmod
+$ reboot
 ```
+
+This method overwrites the exsiting version of `huawei-wmi` that comes with kernel 5.0. You have to redo it everytime the kernel gets updated.
 
 ## Keyboard
 **NOTE: Ignore this if you're running `systemd-udev` > 240.**
@@ -37,7 +48,7 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 ```
 
 ## TODO
-* ~~Merge driver into upstream~~ Merged in Linux > 4.20. [Commit log](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/log/drivers/platform/x86/huawei-wmi.c)
+* ~~Merge driver into upstream~~ Merged in Linux > 4.20. [Commit log](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/drivers/platform/x86/huawei-wmi.c?id=bf4fb28c6e74495de9e1e4ad359cd2272ac12c53)
 * ~~Getting device LEDs to work~~ See `0003-ALSA-hda-add-support-for-Huawei-WMI-micmute-LED.patch`
 * Support more devices
 * ACPI driver?
@@ -47,3 +58,5 @@ Fork, modify, and create a pull request.
 
 ## Credits
 * Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan Baer [@janbaer](https://github.com/janbaer) for testing the module on the MBX.
+* Big thanks to @nekr0z for testing this driver on his Matebook 13 (2019) `WRT-WX9` and for his awesome project [matebook-applet](https://github.com/nekr0z/matebook-applet).
+* Thanks to @wasakakero for testing this driver on the Matebook D 14-AMD `KPL-W0X`.
