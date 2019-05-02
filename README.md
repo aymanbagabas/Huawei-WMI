@@ -1,13 +1,13 @@
 **NOTE: Since this driver made it to mainline kernel, this repository will be used for testing and development purposes.**
 
-# Huawei WMI laptop extras driver
-This driver adds support for some of the missing features found on Huawei laptops. It implements Windows Management Instrumentation (WMI) device mapping to kernel. Supported features are:
+# Huawei WMI laptop extras linux driver
+This driver adds support for some of the missing features found on Huawei laptops running linux. It implements Windows Management Instrumentation (WMI) device mapping to kernel. Supported features are:
 * Function hotkeys
 * Micmute LED
 * Battery protection
 * Fn-lock
 
-Battery protection and Fn-lock can be accessed from `/sys/devices/huawei-wmi/{charge_thresholds,fn_lock_state}`
+Battery protection and Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/{charge_thresholds,fn_lock_state}`
 
 This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refer to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
 
