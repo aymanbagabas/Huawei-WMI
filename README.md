@@ -9,7 +9,7 @@ This driver adds support for some of the missing features found on Huawei laptop
 
 Battery protection and Fn-lock can be accessed from `/sys/devices/huawei-wmi/{charge_thresholds,fn_lock_state}`
 
-This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refere back to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
+This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refer to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
 
 Check out [matebook-applet](https://github.com/nekr0z/matebook-applet).
 
@@ -57,6 +57,6 @@ sudo udevadm --debug hwdb --update; sudo udevadm trigger
 Fork, modify, and create a pull request.
 
 ## Credits
-* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan Baer [@janbaer](https://github.com/janbaer) for testing the module on the MBX.
+* Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan Baer [@janbaer](https://github.com/janbaer) for testing the module on the Matebook X (2017).
 * Big thanks to @nekr0z for testing this driver on his Matebook 13 (2019) `WRT-WX9` and for his awesome project [matebook-applet](https://github.com/nekr0z/matebook-applet).
 * Thanks to @wasakakero for testing this driver on the Matebook D 14-AMD `KPL-W0X`.
