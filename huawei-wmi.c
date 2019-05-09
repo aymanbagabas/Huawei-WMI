@@ -8,6 +8,7 @@
 #include <linux/acpi.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
+#include <linux/dmi.h>
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
 #include <linux/leds.h>
@@ -15,18 +16,16 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/sysfs.h>
-#include <linux/wait.h>
-#include <linux/workqueue.h>
 #include <linux/wmi.h>
 
 /*
  * Huawei WMI GUIDs
  */
 #define AMW0_METHOD_GUID "ABBC0F5B-8EA1-11D1-A000-C90629100000"
-
-#define WMI0_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
 #define AMW0_EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
 
+/* Legacy GUIDs */
+#define WMI0_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
 #define WMI0_EXPENSIVE_GUID "39142400-C6A3-40fa-BADB-8A2652834100"
 
 /* AMW0_commands */
@@ -51,11 +50,18 @@ enum fn_state {
 	FN_LOCK_ON = 0x02,
 };
 
+struct quirk_entry {
+	bool battery_delay;
+	bool ec_micmute;
+};
+
+static struct quirk_entry *quirks;
+
 struct huawei_wmi {
 	struct led_classdev cdev;
-	struct mutex wmi_mutex;
+	struct mutex wmi_lock;
+	struct mutex battery_lock;
 	struct platform_device *pdev;
-	struct wmi_device *wdev;
 };
 
 static struct platform_device *pdev;
@@ -77,6 +83,43 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_END,	 0 }
 };
 
+/* Quirks */
+
+static int __init dmi_matched(const struct dmi_system_id *dmi)
+{
+	quirks = dmi->driver_data;
+	return 1;
+}
+
+static struct quirk_entry quirk_battery_delay = {
+	.battery_delay = true,
+};
+
+static struct quirk_entry quirk_ec_micmute = {
+	.ec_micmute = true,
+};
+
+static const struct dmi_system_id huawei_quirks[] = {
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei MACH-WX9",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MACH-WX9"),
+		},
+		.driver_data = &quirk_battery_delay
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei MateBook X",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HUAWEI MateBook X")
+		},
+		.driver_data = &quirk_ec_micmute
+	}
+};
+
 /* Utils */
 
 static int huawei_wmi_eval(struct device *dev, struct amw0_arg *arg, void *buf, size_t buflen)
@@ -91,7 +134,7 @@ static int huawei_wmi_eval(struct device *dev, struct amw0_arg *arg, void *buf, 
 
 	in.length = sizeof(struct amw0_arg);
 	in.pointer = (u32 *)arg;
-	mutex_lock(&huawei->wmi_mutex);
+	mutex_lock(&huawei->wmi_lock);
 	status = wmi_evaluate_method(AMW0_METHOD_GUID, 0, 1, &in, &out);
 	if (ACPI_FAILURE(status)) {
 		dev_err(dev, "Failed to evaluate wmi method\n");
@@ -134,7 +177,7 @@ static int huawei_wmi_eval(struct device *dev, struct amw0_arg *arg, void *buf, 
 	}
 
 wmi_eval_fail:
-	mutex_unlock(&huawei->wmi_mutex);
+	mutex_unlock(&huawei->wmi_lock);
 	kfree(out.pointer);
 	return err;
 }
@@ -298,8 +341,41 @@ static struct wmi_driver huawei_wmi_input_driver = {
 static void huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
-	struct amw0_arg arg = { 0, 0, brightness, 0 };
-	huawei_wmi_cmd(led_cdev->dev->parent, MICMUTE_LED, &arg, NULL, NULL);
+	if (quirks && quirks->ec_micmute) {
+		char *acpi_method;
+		acpi_handle handle;
+		union acpi_object args[3];
+		struct acpi_object_list arg_list = {
+			.pointer = args,
+			.count = ARRAY_SIZE(args),
+		};
+
+		handle = ec_get_handle();
+		if (!handle) {
+			dev_err(led_cdev->dev->parent, "Failed to get EC handle\n");
+			return;
+		}
+
+		args[0].type = args[1].type = args[2].type = ACPI_TYPE_INTEGER;
+		args[1].integer.value = 0x04;
+	
+		if (acpi_has_method(handle, "SPIN")) {
+			acpi_method = "SPIN";
+			args[0].integer.value = 0;
+			args[2].integer.value = brightness ? 1 : 0;
+		} else if (acpi_has_method(handle, "WPIN")) {
+			acpi_method = "WPIN";
+			args[0].integer.value = 1;
+			args[2].integer.value = brightness ? 0 : 1;
+		} else {
+			return;
+		}
+
+		acpi_evaluate_object(handle, acpi_method, &arg_list, NULL);
+	} else {
+		struct amw0_arg arg = { 0, 0, brightness, 0 };
+		huawei_wmi_cmd(led_cdev->dev->parent, MICMUTE_LED, &arg, NULL, NULL);
+	}
 }
 
 static int huawei_wmi_leds_setup(struct device *dev)
@@ -321,15 +397,18 @@ static int huawei_wmi_leds_setup(struct device *dev)
 
 static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 {
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	char ret[0x100] = { 0 };
 	int err, i;
 
+	mutex_lock(&huawei->battery_lock);
 	err = huawei_wmi_cmd(dev, BATTERY_GET, NULL, &ret, sizeof(struct amw0_arg));
+	mutex_unlock(&huawei->battery_lock);
 	if (err)
 		return -EINVAL;
 
-	/* Returned buffer positions are either 0x03 and 0x02
-	 * or 0x02 and 0x01. 0x00 reserved for return status.
+	/* Returned buffer positions battery thresholds either in
+	 * 0x03 and 0x02 or in 0x02 and 0x01. 0x00 reserved for return status.
 	 */
 	for(i = 0x100 -1; i > 0; i--) {
 		if (ret[i]) {
@@ -344,18 +423,27 @@ static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 
 static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 {
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	struct amw0_arg arg = { 0, 0, low, high };
+	int err;
 
 	/* This is an edge case were some models turn battery protection
 	 * off without changing their thresholds values. We clear the
 	 * values before turning off protection. Since this function
 	 * writes to EC memory, we wait before calling it again.
 	 */
-	// FIXME: this call gets ignored
 	if (low == 0 && high == 100)
 		huawei_wmi_battery_set(dev, 0, 0);
 
-	return huawei_wmi_cmd(dev, BATTERY_SET, &arg, NULL, NULL);
+	mutex_lock(&huawei->battery_lock);
+	err = huawei_wmi_cmd(dev, BATTERY_SET, &arg, NULL, NULL);
+	if (quirks && quirks->battery_delay)
+		mdelay(jiffies_to_msecs(0.5 * HZ));
+	mutex_unlock(&huawei->battery_lock);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 /* Fn lock */
@@ -449,7 +537,31 @@ static struct attribute *huawei_wmi_attrs[] = {
 	NULL
 };
 
+static umode_t huawei_wmi_is_visible(struct kobject *kobj,
+		struct attribute *attr, int idx)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	acpi_status status;
+	acpi_handle handle;
+	bool supported = false;
+
+	status = acpi_get_handle(NULL, "\\", &handle);
+	if (ACPI_FAILURE(status))
+		dev_err(dev, "Failed to get handle\n");
+
+	if (attr == &dev_attr_charge_thresholds.attr) {
+		supported = acpi_has_method(handle, "GBTT") &&
+			acpi_has_method(handle, "SBTT");
+	} else if (attr == &dev_attr_fn_lock_state.attr) {
+		supported = acpi_has_method(handle, "GFRS") &&
+			acpi_has_method(handle, "SFRS");
+	}
+
+	return supported ? attr->mode : 0;
+}
+
 static const struct attribute_group huawei_wmi_group = {
+	.is_visible = huawei_wmi_is_visible,
 	.attrs = huawei_wmi_attrs
 };
 
@@ -462,13 +574,11 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (!huawei)
 		return -ENOMEM;
 
-	// TODO: add quirks?
-
 	huawei->pdev = pdev;
 	dev_set_drvdata(&pdev->dev, huawei);
-	mutex_init(&huawei->wmi_mutex);
+	mutex_init(&huawei->wmi_lock);
+	mutex_init(&huawei->battery_lock);
 	
-	// TODO: check laptop capabilities and features
 	err = sysfs_create_group(&pdev->dev.kobj, &huawei_wmi_group);
 	if (err)
 		goto fail_sysfs;
@@ -505,6 +615,8 @@ static __init int huawei_wmi_init(void)
 {
 	int err;
 
+	dmi_check_system(huawei_quirks);
+
 	err = wmi_driver_register(&huawei_wmi_input_driver);
 	if (err)
 		pr_err("Unable to register wmi input driver\n");
@@ -520,6 +632,7 @@ static __init int huawei_wmi_init(void)
 		pdev = platform_device_register_simple("huawei-wmi", -1, NULL, 0);
 		if (IS_ERR(pdev)) {
 			pr_err("Failed to register platform device\n");
+			platform_driver_unregister(&huawei_wmi_driver);
 			wmi_driver_unregister(&huawei_wmi_input_driver);
 			return PTR_ERR(pdev);
 		}
