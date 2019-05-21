@@ -125,7 +125,8 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "HUAWEI MateBook X")
 		},
 		.driver_data = &quirk_matebook_x
-	}
+	},
+	{  }
 };
 
 /* Utils */
