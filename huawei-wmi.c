@@ -130,8 +130,8 @@ static const struct dmi_system_id huawei_quirks[] = {
 
 /* Utils */
 
-static int huawei_wmi_eval(struct device *dev, char *arg,
-		char *buf, size_t buflen)
+static int huawei_wmi_eval(struct device *dev, u8 *arg,
+		u8 *buf, size_t buflen)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -141,7 +141,7 @@ static int huawei_wmi_eval(struct device *dev, char *arg,
 	size_t len;
 	int err = -ENODEV;
 
-	in.length = sizeof(char) * 4;
+	in.length = sizeof(u8) * 4;
 	in.pointer = (u32 *)arg;
 	mutex_lock(&huawei->wmi_lock);
 	status = wmi_evaluate_method(AMW0_METHOD_GUID, 0, 1, &in, &out);
@@ -160,8 +160,7 @@ static int huawei_wmi_eval(struct device *dev, char *arg,
 	obj = out.pointer;
 	if (!obj)
 		goto wmi_eval_fail;
-	if (obj->type != ACPI_TYPE_PACKAGE ||
-			obj->package.count != 2) {
+	if (obj->type != ACPI_TYPE_PACKAGE || obj->package.count != 2) {
 		dev_err(dev, "Unknown response type %d\n", obj->type);
 		goto wmi_eval_fail;
 	}
@@ -182,11 +181,11 @@ wmi_eval_fail:
 	return err;
 }
 
-static int huawei_wmi_cmd(struct device *dev, enum wmaa_cmd cmd, char *arg,
-		char *out, size_t outlen)
+static int huawei_wmi_cmd(struct device *dev, enum wmaa_cmd cmd, u8 *arg,
+		u8 *out, size_t outlen)
 {
-	char parm[4] = { 0 };
-	char buf[0x100] = { 0xff };
+	u8 parm[4] = { 0 };
+	u8 buf[0x100] = { 0xff };
 	int err;
 
 	if (!arg)
@@ -214,8 +213,7 @@ static int huawei_wmi_cmd(struct device *dev, enum wmaa_cmd cmd, char *arg,
 		arg[1] = 0x0b;
 		break;
 	default:
-		dev_err(dev, "Unsupported command, got: 0x%02x%02x%02x%02x\n",
-				arg[3], arg[2], arg[1], arg[0]);
+		dev_err(dev, "Unsupported command, got: 0x%08x\n", *(u32 *)arg);
 		return -EINVAL;
 	}
 
@@ -312,7 +310,7 @@ static int huawei_wmi_input_setup(struct platform_device *pdev,
 	int err;
 
 	*idev = devm_input_allocate_device(&pdev->dev);
-	if (!idev)
+	if (!*idev)
 		return -ENOMEM;
 
 	(*idev)->name = "Huawei WMI hotkeys";
@@ -332,6 +330,7 @@ static int huawei_wmi_input_setup(struct platform_device *pdev,
 static void huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
 {
+	/* This is a workaround until the "legacy" interface is implemented. */
 	if (quirks && quirks->ec_micmute) {
 		char *acpi_method;
 		acpi_handle handle;
@@ -364,7 +363,7 @@ static void huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 
 		acpi_evaluate_object(handle, acpi_method, &arg_list, NULL);
 	} else {
-		char arg[] = { 0, 0, brightness, 0 };
+		u8 arg[] = { 0, 0, brightness, 0 };
 
 		huawei_wmi_cmd(led_cdev->dev->parent, MICMUTE_LED, arg, NULL, NULL);
 	}
@@ -390,7 +389,7 @@ static int huawei_wmi_leds_setup(struct device *dev)
 static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
-	char ret[0x100] = { 0 };
+	u8 ret[0x100] = { 0 };
 	int err, i = 0x100;
 
 	mutex_lock(&huawei->battery_lock);
@@ -412,7 +411,7 @@ static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
-	char arg[] = { 0, 0, low, high };
+	u8 arg[] = { 0, 0, low, high };
 	int err;
 
 	/* This is an edge case were some models turn battery protection
@@ -438,7 +437,7 @@ static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 
 static int huawei_wmi_fn_lock_get(struct device *dev, int *on)
 {
-	char ret[0x100] = { 0 };
+	u8 ret[0x100] = { 0 };
 	int err, i = 0;
 
 	err = huawei_wmi_cmd(dev, FN_LOCK_GET, NULL, ret, 0x100);
@@ -453,7 +452,7 @@ static int huawei_wmi_fn_lock_get(struct device *dev, int *on)
 
 static int huawei_wmi_fn_lock_set(struct device *dev, int on)
 {
-	char arg[] = { 0, 0, (on) ? FN_LOCK_ON : FN_LOCK_OFF, 0 };
+	u8 arg[] = { 0, 0, (on) ? FN_LOCK_ON : FN_LOCK_OFF, 0 };
 
 	return huawei_wmi_cmd(dev, FN_LOCK_SET, arg, NULL, NULL);
 }
