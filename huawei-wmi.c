@@ -140,7 +140,7 @@ static int huawei_wmi_eval(struct device *dev, u8 *arg,
 	union acpi_object *obj;
 	acpi_status status;
 	size_t len;
-	int err = -ENODEV;
+	int err = -EIO;
 
 	in.length = sizeof(u8) * 4;
 	in.pointer = (u32 *)arg;
@@ -148,6 +148,7 @@ static int huawei_wmi_eval(struct device *dev, u8 *arg,
 	status = wmi_evaluate_method(AMW0_METHOD_GUID, 0, 1, &in, &out);
 	if (ACPI_FAILURE(status)) {
 		dev_err(dev, "Failed to evaluate wmi method\n");
+		err = -ENODEV;
 		goto wmi_eval_fail;
 	}
 
@@ -221,7 +222,7 @@ static int huawei_wmi_cmd(struct device *dev, enum wmaa_cmd cmd, u8 *arg,
 	/* Some models require calling WMAA twice to execute
 	 * a command. We call WMAA and if we get a non-zero return
 	 * status we evaluate WMAA again. If we get another non-zero
-	 * return, we return -ENXIO. This way we don't need to
+	 * return, we return -EIO. This way we don't need to
 	 * check for return status anywhere we call huawei_wmi_cmd.
 	 */
 	err = huawei_wmi_eval(dev, arg, buf, 0x100);
@@ -233,7 +234,7 @@ static int huawei_wmi_cmd(struct device *dev, enum wmaa_cmd cmd, u8 *arg,
 			return err;
 		if (buf[0]) {
 			dev_err(dev, "Invalid response, got: %d\n", buf[0]);
-			return -ENXIO;
+			return -EIO;
 		}
 	}
 	if (out)
@@ -289,6 +290,11 @@ static void huawei_wmi_input_notify(u32 value, void *context)
 	struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 	acpi_status status;
+
+	if (!idev) {
+		dev_err(&huawei_wmi_pdev->dev, "No input_dev\n");
+		return;
+	}
 
 	status = wmi_get_event_data(value, &response);
 	if (ACPI_FAILURE(status)) {
@@ -417,8 +423,8 @@ static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 
 	/* This is an edge case were some models turn battery protection
 	 * off without changing their thresholds values. We clear the
-	 * values before turning off protection. We need wait blocking to
-	 * make sure these values make its way to EC.
+	 * values before turning off protection. We need a blocking delay to
+	 * make sure these values make their way to EC.
 	 */
 	if (low == 0 && high == 100)
 		huawei_wmi_battery_set(dev, 0, 0);
@@ -426,12 +432,10 @@ static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 	mutex_lock(&huawei->battery_lock);
 	err = huawei_wmi_cmd(dev, BATTERY_SET, arg, NULL, NULL);
 	if (quirks && quirks->battery_sleep)
-		msleep(jiffies_to_msecs(0.5 * HZ));
+		msleep(1000);
 	mutex_unlock(&huawei->battery_lock);
-	if (err)
-		return err;
 
-	return 0;
+	return err;
 }
 
 /* Fn lock */
@@ -464,13 +468,13 @@ static ssize_t charge_thresholds_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int low, high;
+	int low, high, err = -EINVAL;
 
 	if (sscanf(buf, "%d %d", &low, &high) != 2 ||
 			low < 0 || high > 100 ||
 			low > high ||
-			huawei_wmi_battery_set(dev, low, high))
-		return -EINVAL;
+			(err = huawei_wmi_battery_set(dev, low, high)))
+		return err;
 
 	return size;
 }
@@ -479,12 +483,12 @@ static ssize_t fn_lock_state_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int on;
+	int on, err = -EINVAL;
 
 	if (kstrtoint(buf, 10, &on) ||
 			on < 0 || on > 1 ||
-			huawei_wmi_fn_lock_set(dev, on))
-		return -EINVAL;
+			(err = huawei_wmi_fn_lock_set(dev, on)))
+		return err;
 
 	return size;
 }
@@ -493,12 +497,11 @@ static ssize_t charge_thresholds_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
-	int err, low, high;
+	int err, low = -1, high = -1;
 
-	low = high = 0;
 	err = huawei_wmi_battery_get(dev, &low, &high);
 	if (err)
-		return -EINVAL;
+		return err;
 
 	return sprintf(buf, "%d %d\n", low, high);
 }
@@ -507,12 +510,11 @@ static ssize_t fn_lock_state_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
-	int err, on;
+	int err, on = -1;
 
-	on = 0;
 	err = huawei_wmi_fn_lock_get(dev, &on);
 	if (err)
-		return -EINVAL;
+		return err;
 
 	return sprintf(buf, "%d\n", on);
 }
@@ -547,21 +549,21 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(WMI0_EVENT_GUID)) {
 		err = huawei_wmi_input_setup(pdev, &huawei->idev[0]);
 		if (err)
-			pr_err("Failed to setup input\n");
+			dev_err(&pdev->dev, "Failed to setup input device\n");
 		err = wmi_install_notify_handler(WMI0_EVENT_GUID,
 				huawei_wmi_input_notify, huawei->idev[0]);
 		if (err)
-			pr_err("Failed to install notify\n");
+			dev_err(&pdev->dev, "Failed to install notify handler\n");
 	}
 	
 	if (wmi_has_guid(AMW0_EVENT_GUID)) {
 		err = huawei_wmi_input_setup(pdev, &huawei->idev[1]);
 		if (err)
-			pr_err("Failed to setup input\n");
+			dev_err(&pdev->dev, "Failed to setup input device\n");
 		err = wmi_install_notify_handler(AMW0_EVENT_GUID,
 				huawei_wmi_input_notify, huawei->idev[1]);
 		if (err)
-			pr_err("Failed to install notify\n");
+			dev_err(&pdev->dev, "Failed to install notify handler\n");
 	}
 
 	if (wmi_has_guid(AMW0_METHOD_GUID)) {
@@ -570,12 +572,14 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		mutex_init(&huawei->battery_lock);
 
 		err = sysfs_create_group(&pdev->dev.kobj, &huawei_wmi_group);
-		if (err)
-			pr_err("Failed to create sysfs interface\n");
+		if (err) {
+			dev_err(&pdev->dev, "Failed to create sysfs interface\n");
+			return err;
+		}
 
 		err = huawei_wmi_leds_setup(&pdev->dev);
 		if (err)
-			pr_err("Failed to setup leds\n");
+			dev_err(&pdev->dev, "Failed to setup leds\n");
 	}
 
 	return 0;
