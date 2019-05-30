@@ -1,22 +1,24 @@
-**NOTE: Since this driver made it to mainline kernel, this repository will be used for testing and development purposes.**
+**NOTE: Since this driver, v2.0, made it to mainline kernel, this repository will be used for testing and development purposes.**
 
 # Huawei WMI laptop extras linux driver
 This driver adds support for some of the missing features found on Huawei laptops running linux. It implements Windows Management Instrumentation (WMI) device mapping to kernel. Supported features are:
-* Function hotkeys
-* Micmute LED
-* Battery protection
-* Fn-lock
+* Function hotkeys, implemented in v1.0
+* Micmute LED, implemented in v2.0 & v3.0 (all models should work)
+* Battery protection, implemented in v3.0
+* Fn-lock, implemented v3.0
 
 Battery protection and Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/{charge_thresholds,fn_lock_state}`
 
 This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refer to tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
 
-Check out [matebook-applet](https://github.com/nekr0z/matebook-applet).
+Check out [matebook-applet](https://github.com/nekr0z/matebook-applet) for a GUI
+to control Fn-look and battery protection.
 
 ## Installation
-Make sure you're using kernel >= 5.0. You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules.
+Make sure you're using kernel >= 5.0.
+You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules for easy installation.
 
-OR build it from source.
+Or build it from source.
 
 1. Make sure you have your kernel headers. In Fedora that would be:
 
@@ -25,14 +27,17 @@ $ sudo dnf install kernel-headers kernel-devel
 ```
 Should be similar in other distributions.
 
-2. Clone and *update* the module.
+2. Clone and *update*/*install* the module.
 
 ```
 $ git clone https://github.com/aymanbagabas/Huawei-WMI
 $ cd Huawei-WMI
 $ make
+$ # To update use:
 $ sudo cp huawei-wmi.ko /lib/modules/$(uname -r)/updates/
 $ sudo depmod
+$ # To install use:
+$ sudo make install
 $ reboot
 ```
 
