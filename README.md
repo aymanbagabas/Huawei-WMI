@@ -27,7 +27,7 @@ $ sudo dnf install kernel-headers kernel-devel
 ```
 Should be similar in other distributions.
 
-2. Clone and *update*/*install* the module.
+2. Clone and *update* / *install* the module.
 
 ```
 $ git clone https://github.com/aymanbagabas/Huawei-WMI
