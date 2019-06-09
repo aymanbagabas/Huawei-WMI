@@ -468,7 +468,9 @@ static struct attribute *huawei_wmi_attrs[] = {
 	NULL
 };
 
-ATTRIBUTE_GROUPS(huawei_wmi);
+static const struct attribute_group huawei_wmi_group = {
+	.attrs = huawei_wmi_attrs
+};
 
 /* debugfs */
 
@@ -699,7 +701,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		mutex_init(&huawei->wmi_lock);
 		mutex_init(&huawei->battery_lock);
 
-		err = devm_device_add_groups(&pdev->dev, huawei_wmi_groups);
+		err = sysfs_create_group(&pdev->dev.kobj, &huawei_wmi_group);
 		if (err) {
 			dev_err(&pdev->dev, "Failed to create sysfs interface\n");
 			return err;
@@ -725,8 +727,10 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_EVENT_GUID))
 		wmi_remove_notify_handler(HWMI_EVENT_GUID);
 
-	if (wmi_has_guid(HWMI_METHOD_GUID))
+	if (wmi_has_guid(HWMI_METHOD_GUID)) {
+		sysfs_remove_group(&pdev->dev.kobj, &huawei_wmi_group);
 		huawei_wmi_debugfs_exit(&pdev->dev);
+	}
 
 	return 0;
 }
