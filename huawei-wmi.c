@@ -468,9 +468,7 @@ static struct attribute *huawei_wmi_attrs[] = {
 	NULL
 };
 
-static const struct attribute_group huawei_wmi_group = {
-	.attrs = huawei_wmi_attrs
-};
+ATTRIBUTE_GROUPS(huawei_wmi);
 
 /* debugfs */
 
@@ -728,8 +726,8 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		wmi_remove_notify_handler(HWMI_EVENT_GUID);
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
-		sysfs_remove_group(&pdev->dev.kobj, &huawei_wmi_group);
 		huawei_wmi_debugfs_exit(&pdev->dev);
+		sysfs_remove_group(&pdev->dev.kobj, &huawei_wmi_group);
 	}
 
 	return 0;
