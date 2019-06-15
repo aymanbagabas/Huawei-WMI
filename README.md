@@ -18,7 +18,25 @@ to control Fn-look and battery protection.
 Make sure you're using kernel >= 5.0.
 You can get this driver from [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use DKMS modules for easy installation.
 
-Or build it from source.
+### Use RPM package for Fedora/RHEL/CentOS
+
+Install the RPM package provided [here](https://github.com/aymanbagabas/Huawei-WMI/releases).
+
+### Use dkms tarball installation
+
+1. Grab `huawei-wmi-VER-source-only.dkms.tar.gz` from [here](https://github.com/aymanbagabas/Huawei-WMI/releases)
+2. Add dkms tarball and install module
+Note: change `VER` to the desired module version.
+
+```
+$ sudo dkms ldtarball --archive=huawei-wmi-VER-source-only.dkms.tar.gz
+$ # For autoinstallation
+$ sudo dkms autoinstall -m huawei-wmi/VER
+$ # For one-time installation
+$ sudo dkms install huawei-wmi/VER
+```
+
+### Build from source
 
 1. Make sure you have your kernel headers. In Fedora that would be:
 
