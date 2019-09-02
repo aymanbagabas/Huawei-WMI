@@ -28,15 +28,14 @@
 #define WMI0_EXPENSIVE_GUID "39142400-C6A3-40fa-BADB-8A2652834100"
 #define WMI0_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
 
-/* HWMI_commands */
+/* HWMI commands */
 
 enum {
-	BATTERY_THRESH_GET 		= 0x00001103, /* \GBTT */
-	BATTERY_THRESH_SET 		= 0x00001003, /* \SBTT */
-	FAN_SPEED_GET			= 0x00000802, /* \GFNS */
-	FN_LOCK_GET				= 0x00000604, /* \GFRS */
-	FN_LOCK_SET 			= 0x00000704, /* \SFRS */
-	MICMUTE_LED_SET 		= 0x00000b04, /* \SMLS */
+	BATTERY_THRESH_GET		= 0x00001103, /* \GBTT */
+	BATTERY_THRESH_SET		= 0x00001003, /* \SBTT */
+	FN_LOCK_GET			= 0x00000604, /* \GFRS */
+	FN_LOCK_SET			= 0x00000704, /* \SFRS */
+	MICMUTE_LED_SET			= 0x00000b04, /* \SMLS */
 };
 
 struct quirk_entry {
@@ -52,12 +51,12 @@ struct huawei_wmi_debug {
 	u64 arg;
 };
 
-struct huawei_wmi {
-	struct led_classdev cdev;
+struct huawei_wmi_priv {
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
-	struct mutex wmi_lock;
+	struct led_classdev cdev;
 	struct mutex battery_lock;
+	struct mutex wmi_lock;
 	struct platform_device *pdev;
 };
 
@@ -88,7 +87,7 @@ MODULE_PARM_DESC(battery_sleep,
 		"Delay after setting battery charging thresholds.");
 module_param(report_brightness, bool, 0444);
 MODULE_PARM_DESC(report_brightness,
-		"Report brightness key events.");
+		"Report brightness keys.");
 
 /* Quirks */
 
@@ -137,12 +136,12 @@ static const struct dmi_system_id huawei_quirks[] = {
 static int huawei_wmi_call(struct device *dev, struct acpi_buffer *in,
 		struct acpi_buffer *out)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 	acpi_status status;
 
-	mutex_lock(&huawei->wmi_lock);
+	mutex_lock(&priv->wmi_lock);
 	status = wmi_evaluate_method(HWMI_METHOD_GUID, 0, 1, in, out);
-	mutex_unlock(&huawei->wmi_lock);
+	mutex_unlock(&priv->wmi_lock);
 	if (ACPI_FAILURE(status)) {
 		dev_err(dev, "Failed to evaluate wmi method\n");
 		return -ENODEV;
@@ -167,7 +166,7 @@ static int huawei_wmi_cmd(struct device *dev, u64 arg, u8 *buf, size_t buflen)
 	size_t len;
 	int err, i;
 
-	in.length = sizeof(u64);
+	in.length = sizeof(arg);
 	in.pointer = &arg;
 
 	/* Some models require calling HWMI twice to execute a command. We evaluate
@@ -175,9 +174,8 @@ static int huawei_wmi_cmd(struct device *dev, u64 arg, u8 *buf, size_t buflen)
 	 */
 	for (i = 0; i < 2; i++) {
 		err = huawei_wmi_call(dev,  &in, &out);
-		if (err) {
+		if (err)
 			goto fail_cmd;
-		}
 
 		obj = out.pointer;
 		if (!obj) {
@@ -227,9 +225,8 @@ static int huawei_wmi_cmd(struct device *dev, u64 arg, u8 *buf, size_t buflen)
 			goto fail_cmd;
 		}
 
-		if (!*obj->buffer.pointer) {
+		if (!*obj->buffer.pointer)
 			break;
-		}
 	}
 
 	err = (*obj->buffer.pointer) ? -ENODEV : 0;
@@ -282,9 +279,8 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 		}
 
 		status = acpi_evaluate_object(handle, acpi_method, &arg_list, NULL);
-		if (ACPI_FAILURE(status)) {
+		if (ACPI_FAILURE(status))
 			return -ENODEV;
-		}
 
 		return 0;
 	} else {
@@ -299,33 +295,32 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 
 static int huawei_wmi_leds_setup(struct device *dev)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 
-	huawei->cdev.name = "platform::micmute";
-	huawei->cdev.max_brightness = 1;
-	huawei->cdev.brightness_set_blocking = huawei_wmi_micmute_led_set;
-	huawei->cdev.default_trigger = "audio-micmute";
-	huawei->cdev.brightness = ledtrig_audio_get(LED_AUDIO_MICMUTE);
-	huawei->cdev.dev = dev->parent;
-	huawei->cdev.flags = LED_CORE_SUSPENDRESUME;
+	priv->cdev.name = "platform::micmute";
+	priv->cdev.max_brightness = 1;
+	priv->cdev.brightness_set_blocking = huawei_wmi_micmute_led_set;
+	priv->cdev.default_trigger = "audio-micmute";
+	priv->cdev.brightness = ledtrig_audio_get(LED_AUDIO_MICMUTE);
+	priv->cdev.dev = dev;
+	priv->cdev.flags = LED_CORE_SUSPENDRESUME;
 
-	return devm_led_classdev_register(dev, &huawei->cdev);
+	return devm_led_classdev_register(dev, &priv->cdev);
 }
 
 /* Battery protection */
 
 static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 	u8 ret[0x100];
 	int err, i;
 
-	mutex_lock(&huawei->battery_lock);
+	mutex_lock(&priv->battery_lock);
 	err = huawei_wmi_cmd(dev, BATTERY_THRESH_GET, ret, 0x100);
-	mutex_unlock(&huawei->battery_lock);
-	if (err) {
+	mutex_unlock(&priv->battery_lock);
+	if (err)
 		return err;
-	}
 
 	/* Find the last two non-zero values. Return status is ignored. */
 	i = 0x100;
@@ -339,7 +334,7 @@ static int huawei_wmi_battery_get(struct device *dev, int *low, int *high)
 
 static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 	u8 arg[8];
 	int err;
 
@@ -352,15 +347,14 @@ static int huawei_wmi_battery_set(struct device *dev, int low, int high)
 	 * values before turning off protection. Sometimes we need a sleep delay to
 	 * make sure these values make their way to EC memory.
 	 */
-	if (low == 0 && high == 100) {
+	if (low == 0 && high == 100)
 		huawei_wmi_battery_set(dev, 0, 0);
-	}
 
-	mutex_lock(&huawei->battery_lock);
+	mutex_lock(&priv->battery_lock);
 	err = huawei_wmi_cmd(dev, *(u64 *)arg, NULL, NULL);
 	if (quirks && quirks->battery_sleep)
 		msleep(1000);
-	mutex_unlock(&huawei->battery_lock);
+	mutex_unlock(&priv->battery_lock);
 
 	return err;
 }
@@ -373,9 +367,8 @@ static int huawei_wmi_fn_lock_get(struct device *dev, int *on)
 	int err, i;
 
 	err = huawei_wmi_cmd(dev, FN_LOCK_GET, ret, 0x100);
-	if (err) {
+	if (err)
 		return err;
-	}
 
 	/* Find the first non-zero value. Return status is ignored. */
 	i = 1;
@@ -475,7 +468,7 @@ ATTRIBUTE_GROUPS(huawei_wmi);
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
 		union acpi_object *obj)
 {
-	struct huawei_wmi *huawei = m->private;
+	struct huawei_wmi_priv *priv = m->private;
 	int i;
 
 	switch (obj->type) {
@@ -486,41 +479,41 @@ static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
 		seq_printf(m, "\"%*s\"", obj->string.length, obj->string.pointer);
 		break;
 	case ACPI_TYPE_BUFFER:
-		seq_printf(m, "{");
+		seq_puts(m, "{");
 		for (i = 0; i < obj->buffer.length; i++) {
 			seq_printf(m, "0x%02x", obj->buffer.pointer[i]);
 			if (i < obj->buffer.length - 1)
-				seq_printf(m, ",");
+				seq_puts(m, ",");
 		}
-		seq_printf(m, "}");
+		seq_puts(m, "}");
 		break;
 	case ACPI_TYPE_PACKAGE:
-		seq_printf(m, "[");
+		seq_puts(m, "[");
 		for (i = 0; i < obj->package.count; i++) {
-			huawei_wmi_debugfs_call_dump(m, huawei, &obj->package.elements[i]);
+			huawei_wmi_debugfs_call_dump(m, priv, &obj->package.elements[i]);
 			if (i < obj->package.count - 1)
-				seq_printf(m, ",");
+				seq_puts(m, ",");
 		}
-		seq_printf(m, "]");
+		seq_puts(m, "]");
 		break;
 	default:
-		dev_err(&huawei->pdev->dev, "Unexpected obj type, got %d\n", obj->type);
+		dev_err(&priv->pdev->dev, "Unexpected obj type, got %d\n", obj->type);
 		return;
 	}
 }
 
 static int huawei_wmi_debugfs_call_show(struct seq_file *m, void *data)
 {
-	struct huawei_wmi *huawei = m->private;
+	struct huawei_wmi_priv *priv = m->private;
 	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
 	struct acpi_buffer in;
 	union acpi_object *obj;
 	int err;
 
 	in.length = sizeof(u64);
-	in.pointer = &huawei->debug.arg;
+	in.pointer = &priv->debug.arg;
 
-	err = huawei_wmi_call(&huawei->pdev->dev, &in, &out);
+	err = huawei_wmi_call(&priv->pdev->dev, &in, &out);
 	if (err)
 		return err;
 
@@ -530,7 +523,7 @@ static int huawei_wmi_debugfs_call_show(struct seq_file *m, void *data)
 		goto fail_debugfs_call;
 	}
 
-	huawei_wmi_debugfs_call_dump(m, huawei, obj);
+	huawei_wmi_debugfs_call_dump(m, priv, obj);
 
 fail_debugfs_call:
 	kfree(out.pointer);
@@ -541,37 +534,21 @@ DEFINE_SHOW_ATTRIBUTE(huawei_wmi_debugfs_call);
 
 static void huawei_wmi_debugfs_exit(struct device *dev)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 
-	debugfs_remove_recursive(huawei->debug.root);
+	debugfs_remove_recursive(priv->debug.root);
 }
 
-static int huawei_wmi_debugfs_init(struct device *dev)
+static void huawei_wmi_debugfs_setup(struct device *dev)
 {
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
-	struct dentry *dent;
+	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
 
-	huawei->debug.root = debugfs_create_dir("huawei-wmi", NULL);
-	if (!huawei->debug.root) {
-		dev_err(dev, "Failed to create debugfs directory\n");
-		goto fail_debugfs;
-	}
+	priv->debug.root = debugfs_create_dir("huawei-wmi", NULL);
 
-	dent = debugfs_create_x64("arg", S_IRUGO | S_IWUSR, huawei->debug.root,
-			&huawei->debug.arg);
-	if (!dent)
-		goto fail_debugfs;
-
-	dent = debugfs_create_file("call", S_IFREG | S_IRUSR,
-			huawei->debug.root, huawei, &huawei_wmi_debugfs_call_fops);
-	if (!dent)
-		goto fail_debugfs;
-
-	return 0;
-
-fail_debugfs:
-	huawei_wmi_debugfs_exit(dev);
-	return -ENOMEM;
+	debugfs_create_x64("arg", 0644, priv->debug.root,
+		&priv->debug.arg);
+	debugfs_create_file("call", 0400,
+		priv->debug.root, priv, &huawei_wmi_debugfs_call_fops);
 }
 
 /* Input */
@@ -591,10 +568,8 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 		acpi_status status;
 
 		status = wmi_query_block(WMI0_EXPENSIVE_GUID, 0, &response);
-		if (ACPI_FAILURE(status)) {
-			dev_err(&idev->dev, "Failed to query wmi block\n");
+		if (ACPI_FAILURE(status))
 			return;
-		}
 
 		obj = (union acpi_object *)response.pointer;
 		if (obj && obj->type == ACPI_TYPE_INTEGER)
@@ -639,19 +614,19 @@ static void huawei_wmi_input_notify(u32 value, void *context)
 	kfree(response.pointer);
 }
 
-static int huawei_wmi_input_setup(struct platform_device *pdev,
+static int huawei_wmi_input_setup(struct device *dev,
 		struct input_dev **idev)
 {
 	int err;
 
-	*idev = devm_input_allocate_device(&pdev->dev);
+	*idev = devm_input_allocate_device(dev);
 	if (!*idev)
 		return -ENOMEM;
 
 	(*idev)->name = "Huawei WMI hotkeys";
 	(*idev)->phys = "wmi/input0";
 	(*idev)->id.bustype = BUS_HOST;
-	(*idev)->dev.parent = &pdev->dev;
+	(*idev)->dev.parent = dev;
 
 	err = sparse_keymap_setup(*idev, huawei_wmi_keymap, NULL);
 	if (err)
@@ -664,54 +639,53 @@ static int huawei_wmi_input_setup(struct platform_device *pdev,
 
 static int huawei_wmi_probe(struct platform_device *pdev)
 {
-	struct huawei_wmi *huawei;
+	struct huawei_wmi_priv *priv;
 	int err;
 
-	huawei = devm_kzalloc(&pdev->dev, sizeof(struct huawei_wmi), GFP_KERNEL);
-	if (!huawei)
+	priv = devm_kzalloc(&pdev->dev, sizeof(struct huawei_wmi_priv), GFP_KERNEL);
+	if (!priv)
 		return -ENOMEM;
 
-	huawei->pdev = pdev;
-	dev_set_drvdata(&pdev->dev, huawei);
+	priv->pdev = pdev;
+	dev_set_drvdata(&pdev->dev, priv);
 
 	if (wmi_has_guid(WMI0_EVENT_GUID)) {
-		err = huawei_wmi_input_setup(pdev, &huawei->idev[0]);
-		if (err)
+		err = huawei_wmi_input_setup(&pdev->dev, &priv->idev[0]) ||
+				wmi_install_notify_handler(WMI0_EVENT_GUID,
+					huawei_wmi_input_notify, priv->idev[0]);
+		if (err) {
 			dev_err(&pdev->dev, "Failed to setup input device\n");
-		err = wmi_install_notify_handler(WMI0_EVENT_GUID,
-				huawei_wmi_input_notify, huawei->idev[0]);
-		if (err)
-			dev_err(&pdev->dev, "Failed to install notify handler\n");
+			return err;
+		}
 	}
 
 	if (wmi_has_guid(HWMI_EVENT_GUID)) {
-		err = huawei_wmi_input_setup(pdev, &huawei->idev[1]);
-		if (err)
+		err = huawei_wmi_input_setup(&pdev->dev, &priv->idev[1]) ||
+				wmi_install_notify_handler(HWMI_EVENT_GUID,
+					huawei_wmi_input_notify, priv->idev[1]);
+		if (err) {
 			dev_err(&pdev->dev, "Failed to setup input device\n");
-		err = wmi_install_notify_handler(HWMI_EVENT_GUID,
-				huawei_wmi_input_notify, huawei->idev[1]);
-		if (err)
-			dev_err(&pdev->dev, "Failed to install notify handler\n");
+			return err;
+		}
 	}
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
+		mutex_init(&priv->wmi_lock);
+		mutex_init(&priv->battery_lock);
 
-		mutex_init(&huawei->wmi_lock);
-		mutex_init(&huawei->battery_lock);
+		err = huawei_wmi_leds_setup(&pdev->dev);
+		if (err) {
+			dev_err(&pdev->dev, "Failed to setup leds\n");
+			return err;
+		}
 
-		err = sysfs_create_group(&pdev->dev.kobj, &huawei_wmi_group);
+		err = sysfs_create_groups(&pdev->dev.kobj, huawei_wmi_groups);
 		if (err) {
 			dev_err(&pdev->dev, "Failed to create sysfs interface\n");
 			return err;
 		}
 
-		err = huawei_wmi_leds_setup(&pdev->dev);
-		if (err)
-			dev_err(&pdev->dev, "Failed to setup leds\n");
-
-		err = huawei_wmi_debugfs_init(&pdev->dev);
-		if (err)
-			dev_err(&pdev->dev, "Failed to setup debugfs\n");
+		huawei_wmi_debugfs_setup(&pdev->dev);
 	}
 
 	return 0;
@@ -727,7 +701,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		huawei_wmi_debugfs_exit(&pdev->dev);
-		sysfs_remove_group(&pdev->dev.kobj, &huawei_wmi_group);
+		sysfs_remove_groups(&pdev->dev.kobj, huawei_wmi_groups);
 	}
 
 	return 0;
@@ -751,14 +725,11 @@ static __init int huawei_wmi_init(void)
 	quirks->report_brightness |= report_brightness;
 
 	err = platform_driver_register(&huawei_wmi_driver);
-	if (err) {
-		pr_err("Failed to register platform driver\n");
+	if (err)
 		return err;
-	}
 
 	huawei_wmi_pdev = platform_device_register_simple("huawei-wmi", -1, NULL, 0);
 	if (IS_ERR(huawei_wmi_pdev)) {
-		pr_err("Failed to register platform device\n");
 		platform_driver_unregister(&huawei_wmi_driver);
 		return PTR_ERR(huawei_wmi_pdev);
 	}
