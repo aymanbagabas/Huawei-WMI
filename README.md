@@ -1,16 +1,16 @@
 # Huawei WMI laptop extras linux driver
 
-**NOTE: Since this driver, v2.0, made it to mainline kernel, this repository
-will be used for testing and development purposes.**
+**NOTE: Version v2.0 is the one in mainline kernel, this repository is used for
+testing and development purposes.**
 
 This driver adds support for some of the missing features found on Huawei
 laptops running linux. It implements Windows Management Instrumentation (WMI)
 device mapping to kernel. Supported features are:
 
 * Function hotkeys, implemented in v1.0
-* Micmute LED, implemented in v2.0 & v3.0 (all models should work)
-* Battery protection, implemented in v3.0
-* Fn-lock, implemented v3.0
+* Micmute LED, implemented in v2.0. Updated in v3.0 to work with newer laptops.
+* Battery protection, implemented in v3.0. Updated in v3.3 to use battery charge API.
+* Fn-lock, implemented v3.0.
 
 Battery protection and Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/{charge_thresholds,fn_lock_state}`
 
@@ -18,7 +18,7 @@ This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refer to
 tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
 
 Check out [matebook-applet](https://github.com/nekr0z/matebook-applet) for a GUI
-to control Fn-look and battery protection.
+to control Fn-lock and battery protection.
 
 ## Installation
 
