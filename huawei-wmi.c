@@ -26,10 +26,6 @@
 #define HWMI_METHOD_GUID "ABBC0F5B-8EA1-11D1-A000-C90629100000"
 #define HWMI_EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
 
-#define MFBI_EXPENSIVE_GUID "A80593CE-2377-11DA-00B0-12B622201207"
-
-#define MXM2_EVENT_GUID "F6CB5C3C-9CAE-4EBD-00B5-77931EA32A2C"
-
 /* Legacy GUIDs */
 #define WMI0_EXPENSIVE_GUID "39142400-C6A3-40fa-BADB-8A2652834100"
 #define WMI0_EVENT_GUID "59142400-C6A3-40fa-BADB-8A2652834100"
@@ -750,7 +746,6 @@ static void huawei_wmi_input_exit(struct device *dev, const char *guid)
 static const struct wmi_device_id huawei_wmi_event_id_table[] = {
 	{ .guid_string = WMI0_EVENT_GUID },
 	{ .guid_string = HWMI_EVENT_GUID },
-	{ .guid_string = MXM2_EVENT_GUID },
 	{  }
 };
 
