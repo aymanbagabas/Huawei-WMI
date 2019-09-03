@@ -660,6 +660,7 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 {
 	const struct key_entry *key;
 
+	pr_info("code %x\n", code);
 	/*
 	 * WMI0 uses code 0x80 to indicate a hotkey event.
 	 * The actual key is fetched from the method WQ00
@@ -677,6 +678,8 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 		obj = (union acpi_object *)response.pointer;
 		if (obj && obj->type == ACPI_TYPE_INTEGER)
 			code = obj->integer.value;
+
+		pr_info("code 0x80 detected fetched code %x\n", code);
 
 		kfree(response.pointer);
 	}
@@ -763,6 +766,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		struct input_dev *idev = *huawei_wmi->idev;
 
 		if (wmi_has_guid(guid->guid_string)) {
+			pr_info("GUID %s\n", guid->guid_string);
 			err = huawei_wmi_input_setup(&pdev->dev, guid->guid_string, &idev);
 			if (err) {
 				dev_err(&pdev->dev, "Failed to setup input on %s\n", guid->guid_string);
