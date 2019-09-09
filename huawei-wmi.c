@@ -53,7 +53,7 @@ struct huawei_wmi_debug {
 	u64 arg;
 };
 
-struct huawei_wmi_priv {
+struct huawei_wmi {
 	bool battery_available;
 	bool fn_lock_available;
 
@@ -66,7 +66,7 @@ struct huawei_wmi_priv {
 	struct mutex wmi_lock;
 };
 
-struct huawei_wmi_priv *huawei_wmi;
+struct huawei_wmi *huawei_wmi;
 
 static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_KEY,    0x281, { KEY_BRIGHTNESSDOWN } },
@@ -297,17 +297,17 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 
 static void huawei_wmi_leds_setup(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	priv->cdev.name = "platform::micmute";
-	priv->cdev.max_brightness = 1;
-	priv->cdev.brightness_set_blocking = &huawei_wmi_micmute_led_set;
-	priv->cdev.default_trigger = "audio-micmute";
-	priv->cdev.brightness = ledtrig_audio_get(LED_AUDIO_MICMUTE);
-	priv->cdev.dev = dev;
-	priv->cdev.flags = LED_CORE_SUSPENDRESUME;
+	huawei->cdev.name = "platform::micmute";
+	huawei->cdev.max_brightness = 1;
+	huawei->cdev.brightness_set_blocking = &huawei_wmi_micmute_led_set;
+	huawei->cdev.default_trigger = "audio-micmute";
+	huawei->cdev.brightness = ledtrig_audio_get(LED_AUDIO_MICMUTE);
+	huawei->cdev.dev = dev;
+	huawei->cdev.flags = LED_CORE_SUSPENDRESUME;
 
-	devm_led_classdev_register(dev, &priv->cdev);
+	devm_led_classdev_register(dev, &huawei->cdev);
 }
 
 /* Battery protection */
@@ -435,12 +435,11 @@ static DEVICE_ATTR_RW(charge_control_end_threshold);
 static int huawei_wmi_battery_add(struct power_supply *battery)
 {
 	/* Huawei laptops come with one battery only */
-	if (strcmp(battery->desc->name, "BAT0") != 0 ||
-			device_create_file(&battery->dev,
-				&dev_attr_charge_control_start_threshold) ||
-			device_create_file(&battery->dev,
-				&dev_attr_charge_control_end_threshold))
+	if (strcmp(battery->desc->name, "BAT0") != 0)
 		return -ENODEV;
+
+	device_create_file(&battery->dev, &dev_attr_charge_control_start_threshold);
+	device_create_file(&battery->dev, &dev_attr_charge_control_end_threshold);
 
 	return 0;
 }
@@ -461,11 +460,11 @@ static struct acpi_battery_hook huawei_wmi_battery_hook = {
 
 static void huawei_wmi_battery_setup(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	priv->battery_available = true;
+	huawei->battery_available = true;
 	if (huawei_wmi_battery_get(NULL, NULL)) {
-		priv->battery_available = false;
+		huawei->battery_available = false;
 		return;
 	}
 
@@ -474,9 +473,9 @@ static void huawei_wmi_battery_setup(struct device *dev)
 
 static void huawei_wmi_battery_exit(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	if (priv->battery_available)
+	if (huawei->battery_available)
 		battery_hook_unregister(&huawei_wmi_battery_hook);
 }
 
@@ -545,11 +544,11 @@ static DEVICE_ATTR_RW(fn_lock_state);
 
 static void huawei_wmi_fn_lock_setup(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	priv->fn_lock_available = true;
+	huawei->fn_lock_available = true;
 	if (huawei_wmi_fn_lock_get(NULL)) {
-		priv->fn_lock_available = false;
+		huawei->fn_lock_available = false;
 		return;
 	}
 
@@ -567,7 +566,7 @@ static void huawei_wmi_fn_lock_exit(struct device *dev)
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
 		union acpi_object *obj)
 {
-	struct huawei_wmi_priv *priv = m->private;
+	struct huawei_wmi *huawei = m->private;
 	int i;
 
 	switch (obj->type) {
@@ -589,28 +588,28 @@ static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
 	case ACPI_TYPE_PACKAGE:
 		seq_puts(m, "[");
 		for (i = 0; i < obj->package.count; i++) {
-			huawei_wmi_debugfs_call_dump(m, priv, &obj->package.elements[i]);
+			huawei_wmi_debugfs_call_dump(m, huawei, &obj->package.elements[i]);
 			if (i < obj->package.count - 1)
 				seq_puts(m, ",");
 		}
 		seq_puts(m, "]");
 		break;
 	default:
-		dev_err(&priv->pdev->dev, "Unexpected obj type, got %d\n", obj->type);
+		dev_err(&huawei->pdev->dev, "Unexpected obj type, got %d\n", obj->type);
 		return;
 	}
 }
 
 static int huawei_wmi_debugfs_call_show(struct seq_file *m, void *data)
 {
-	struct huawei_wmi_priv *priv = m->private;
+	struct huawei_wmi *huawei = m->private;
 	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
 	struct acpi_buffer in;
 	union acpi_object *obj;
 	int err;
 
 	in.length = sizeof(u64);
-	in.pointer = &priv->debug.arg;
+	in.pointer = &huawei->debug.arg;
 
 	err = huawei_wmi_call(&in, &out);
 	if (err)
@@ -622,7 +621,7 @@ static int huawei_wmi_debugfs_call_show(struct seq_file *m, void *data)
 		goto fail_debugfs_call;
 	}
 
-	huawei_wmi_debugfs_call_dump(m, priv, obj);
+	huawei_wmi_debugfs_call_dump(m, huawei, obj);
 
 fail_debugfs_call:
 	kfree(out.pointer);
@@ -633,21 +632,21 @@ DEFINE_SHOW_ATTRIBUTE(huawei_wmi_debugfs_call);
 
 static void huawei_wmi_debugfs_setup(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	priv->debug.root = debugfs_create_dir("huawei-wmi", NULL);
+	huawei->debug.root = debugfs_create_dir("huawei-wmi", NULL);
 
-	debugfs_create_x64("arg", 0644, priv->debug.root,
-		&priv->debug.arg);
+	debugfs_create_x64("arg", 0644, huawei->debug.root,
+		&huawei->debug.arg);
 	debugfs_create_file("call", 0400,
-		priv->debug.root, priv, &huawei_wmi_debugfs_call_fops);
+		huawei->debug.root, huawei, &huawei_wmi_debugfs_call_fops);
 }
 
 static void huawei_wmi_debugfs_exit(struct device *dev)
 {
-	struct huawei_wmi_priv *priv = dev_get_drvdata(dev);
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	debugfs_remove_recursive(priv->debug.root);
+	debugfs_remove_recursive(huawei->debug.root);
 }
 
 /* Input */
@@ -734,13 +733,12 @@ static int huawei_wmi_input_setup(struct device *dev,
 
 static void huawei_wmi_input_exit(struct device *dev, const char *guid)
 {
-	if (wmi_has_guid(guid))
-		wmi_remove_notify_handler(guid);
+	wmi_remove_notify_handler(guid);
 }
 
 /* Huawei driver */
 
-static const struct wmi_device_id huawei_wmi_event_id_table[] = {
+static const struct wmi_device_id huawei_wmi_events_id_table[] = {
 	{ .guid_string = WMI0_EVENT_GUID },
 	{ .guid_string = HWMI_EVENT_GUID },
 	{  }
@@ -748,7 +746,7 @@ static const struct wmi_device_id huawei_wmi_event_id_table[] = {
 
 static int huawei_wmi_probe(struct platform_device *pdev)
 {
-	const struct wmi_device_id *guid = huawei_wmi_event_id_table;
+	const struct wmi_device_id *guid = huawei_wmi_events_id_table;
 	int err;
 
 	platform_set_drvdata(pdev, huawei_wmi);
@@ -785,7 +783,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 
 static int huawei_wmi_remove(struct platform_device *pdev)
 {
-	const struct wmi_device_id *guid = huawei_wmi_event_id_table;
+	const struct wmi_device_id *guid = huawei_wmi_events_id_table;
 
 	while (*guid->guid_string) {
 		if (wmi_has_guid(guid->guid_string))
@@ -816,7 +814,7 @@ static __init int huawei_wmi_init(void)
 	struct platform_device *pdev;
 	int err;
 
-	huawei_wmi = kzalloc(sizeof(struct huawei_wmi_priv), GFP_KERNEL);
+	huawei_wmi = kzalloc(sizeof(struct huawei_wmi), GFP_KERNEL);
 	if (!huawei_wmi)
 		return -ENOMEM;
 
@@ -853,9 +851,8 @@ static __exit void huawei_wmi_exit(void)
 module_init(huawei_wmi_init);
 module_exit(huawei_wmi_exit);
 
-MODULE_ALIAS("wmi:"WMI0_EVENT_GUID);
-MODULE_ALIAS("wmi:"HWMI_EVENT_GUID);
 MODULE_ALIAS("wmi:"HWMI_METHOD_GUID);
+MODULE_DEVICE_TABLE(wmi, huawei_wmi_events_id_table);
 MODULE_AUTHOR("Ayman Bagabas <ayman.bagabas@gmail.com>");
 MODULE_DESCRIPTION("Huawei WMI laptop extras driver");
 MODULE_LICENSE("GPL v2");
