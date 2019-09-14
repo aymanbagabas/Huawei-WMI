@@ -12,7 +12,9 @@ device mapping to kernel. Supported features are:
 * Battery protection, implemented in v3.0. Updated in v3.3 to use battery charge API.
 * Fn-lock, implemented v3.0.
 
-Battery protection and Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/{charge_thresholds,fn_lock_state}`
+Battery protection can be accessed from either `/sys/class/power_supply/BAT0/charge_control_{start,end}_threshold` or `/sys/devices/platform/huawei-wmi/charge_control_thresholds`
+
+Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/fn_lock_state`
 
 This driver requires kernel >= 5.0. If you're on kernel < 5.0, please refer to
 tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0).
@@ -102,6 +104,6 @@ Fork, modify, and pull request.
 * Thanks to Daniel Vogelbacher [@cytrinox](https://github.com/cytrinox) and Jan
 Baer [@janbaer](https://github.com/janbaer) for testing the module on the
 Matebook X (2017).
-* Big thanks to @nekr0z for testing this driver on his Matebook 13 (2019)
+* Big thanks to [@nekr0z](https://github.com/nekr0z) for testing this driver on his Matebook 13 (2019)
 `WRT-WX9` and for his awesome project [matebook-applet](https://github.com/nekr0z/matebook-applet).
-* Thanks to @wasakakero for testing this driver on the Matebook D 14-AMD `KPL-W0X`.
+* Thanks to [@wasakakero](https://github.com/wasakakero) for testing this driver on the Matebook D 14-AMD `KPL-W0X`.
