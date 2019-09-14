@@ -389,11 +389,24 @@ static ssize_t charge_control_end_threshold_show(struct device *dev,
 	return sprintf(buf, "%d\n", end);
 }
 
+static ssize_t charge_control_thresholds_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, start, end;
+
+	err = huawei_wmi_battery_get(&start, &end);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d %d\n", start, end);
+}
+
 static ssize_t charge_control_start_threshold_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int start, end, err;
+	int err, start, end;
 
 	err = huawei_wmi_battery_get(NULL, &end);
 	if (err)
@@ -413,7 +426,7 @@ static ssize_t charge_control_end_threshold_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int start, end, err;
+	int err, start, end;
 
 	err = huawei_wmi_battery_get(&start, NULL);
 	if (err)
@@ -429,13 +442,30 @@ static ssize_t charge_control_end_threshold_store(struct device *dev,
 	return size;
 }
 
+static ssize_t charge_control_thresholds_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int err, start, end;
+
+	if (sscanf(buf, "%d %d", &start, &end) != 2)
+		return -EINVAL;
+
+	err = huawei_wmi_battery_set(start, end);
+	if (err)
+		return err;
+
+	return size;
+}
+
 static DEVICE_ATTR_RW(charge_control_start_threshold);
 static DEVICE_ATTR_RW(charge_control_end_threshold);
+static DEVICE_ATTR_RW(charge_control_thresholds);
 
 static int huawei_wmi_battery_add(struct power_supply *battery)
 {
 	/* Huawei laptops come with one battery only */
-	if (strcmp(battery->desc->name, "BAT0") != 0)
+	if (strcmp(battery->desc->name, "BAT") != 1)
 		return -ENODEV;
 
 	device_create_file(&battery->dev, &dev_attr_charge_control_start_threshold);
@@ -469,14 +499,17 @@ static void huawei_wmi_battery_setup(struct device *dev)
 	}
 
 	battery_hook_register(&huawei_wmi_battery_hook);
+	device_create_file(dev, &dev_attr_charge_control_thresholds);
 }
 
 static void huawei_wmi_battery_exit(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	if (huawei->battery_available)
+	if (huawei->battery_available) {
 		battery_hook_unregister(&huawei_wmi_battery_hook);
+		device_remove_file(dev, &dev_attr_charge_control_thresholds);
+	}
 }
 
 /* Fn lock */
