@@ -40,6 +40,11 @@ enum {
 	MICMUTE_LED_SET			= 0x00000b04, /* \SMLS */
 };
 
+union hwmi_arg {
+	u64 cmd;
+	u8 args[8];
+};
+
 struct quirk_entry {
 	bool battery_reset;
 	bool ec_micmute;
@@ -286,12 +291,12 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 
 		return 0;
 	} else {
-		u8 arg[8];
+		union hwmi_arg arg;
 
-		*(u64 *)arg = MICMUTE_LED_SET;
-		arg[2] = brightness;
+		arg.cmd = MICMUTE_LED_SET;
+		arg.args[2] = brightness;
 
-		return huawei_wmi_cmd(*(u64 *)arg, NULL, NULL);
+		return huawei_wmi_cmd(arg.cmd, NULL, NULL);
 	}
 }
 
@@ -335,15 +340,15 @@ static int huawei_wmi_battery_get(int *start, int *end)
 
 static int huawei_wmi_battery_set(int start, int end)
 {
-	u8 arg[8];
+	union hwmi_arg arg;
 	int err;
 
 	if ( start < 0 || end > 100 || start > end)
 		return -EINVAL;
 
-	*(u64 *)arg = BATTERY_THRESH_SET;
-	arg[2] = start;
-	arg[3] = end;
+	arg.cmd = BATTERY_THRESH_SET;
+	arg.args[2] = start;
+	arg.args[3] = end;
 
 	/* This is an edge case were some models turn battery protection
 	 * off without changing their thresholds values. We clear the
@@ -358,7 +363,7 @@ static int huawei_wmi_battery_set(int start, int end)
 		msleep(1000);
 	}
 
-	err = huawei_wmi_cmd(*(u64 *)arg, NULL, NULL);
+	err = huawei_wmi_cmd(arg.cmd, NULL, NULL);
 
 	return err;
 }
@@ -535,12 +540,12 @@ static int huawei_wmi_fn_lock_get(int *on)
 
 static int huawei_wmi_fn_lock_set(int on)
 {
-	u8 arg[8];
+	union hwmi_arg arg;
 
-	*(u64 *)arg = FN_LOCK_SET;
-	arg[2] = on + 1; // 0 undefined, 1 off, 2 on.
+	arg.cmd = FN_LOCK_SET;
+	arg.args[2] = on + 1; // 0 undefined, 1 off, 2 on.
 
-	return huawei_wmi_cmd(*(u64 *)arg, NULL, NULL);
+	return huawei_wmi_cmd(arg.cmd, NULL, NULL);
 }
 
 static ssize_t fn_lock_state_show(struct device *dev,
