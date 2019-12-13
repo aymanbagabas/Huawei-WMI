@@ -46,6 +46,8 @@ sudo dkms ldtarball --archive=huawei-wmi-VER-source-only.dkms.tar.gz
 sudo dkms autoinstall -m huawei-wmi/VER
 # For one-time installation
 sudo dkms install huawei-wmi/VER
+# reboot your system so the path on the battery protection will be updated!
+reboot
 ```
 
 ### Build from source
