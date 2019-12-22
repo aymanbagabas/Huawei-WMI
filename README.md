@@ -1,7 +1,7 @@
 # Huawei WMI laptop extras linux driver
 
-**NOTE: Version v2.0 is the one in mainline kernel, this repository is used for
-testing and development purposes.**
+**NOTE: Version v2.0 is the one in mainline kernel >= 5.0, this repository is used for
+testing and development purposes. v3.3 has been merged in kernel 5.5**
 
 This driver adds support for some of the missing features found on Huawei
 laptops running linux. It implements Windows Management Instrumentation (WMI)
@@ -12,7 +12,7 @@ device mapping to kernel. Supported features are:
 * Battery protection, implemented in v3.0. Updated in v3.3 to use battery charge API.
 * Fn-lock, implemented v3.0.
 
-Battery protection can be accessed from either `/sys/class/power_supply/BAT0/charge_control_{start,end}_threshold` or `/sys/devices/platform/huawei-wmi/charge_control_thresholds`
+Battery protection can accessed from either `/sys/class/power_supply/BAT0/charge_control_{start,end}_threshold` or `/sys/devices/platform/huawei-wmi/charge_control_thresholds`
 
 Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/fn_lock_state`
 
@@ -47,6 +47,7 @@ sudo dkms autoinstall -m huawei-wmi/VER
 # For one-time installation
 sudo dkms install huawei-wmi/VER
 ```
+3. Reboot
 
 ### Build from source
 
