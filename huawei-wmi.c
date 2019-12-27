@@ -790,7 +790,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, huawei_wmi);
 	huawei_wmi->dev = &pdev->dev;
 
-	while (*guid->guid_string) {
+	while (guid->guid_string && *guid->guid_string) {
 		if (wmi_has_guid(guid->guid_string)) {
 			err = huawei_wmi_input_setup(&pdev->dev, guid->guid_string, &idev);
 			if (err) {
@@ -819,7 +819,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 {
 	const struct wmi_device_id *guid = huawei_wmi_events_id_table;
 
-	while (*guid->guid_string) {
+	while (guid->guid_string && *guid->guid_string) {
 		if (wmi_has_guid(guid->guid_string))
 			huawei_wmi_input_exit(&pdev->dev, guid->guid_string);
 
