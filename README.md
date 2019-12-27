@@ -16,8 +16,8 @@ Battery protection can accessed from either `/sys/class/power_supply/BAT0/charge
 
 Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/fn_lock_state`
 
-This driver requires kernel >= 5.1. If you're on kernel < 5.1, please refer to
-tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0) for kernel < 5.0 or branch [5.0](https://github.com/aymanbagabas/Huawei-WMI/tree/5.0) if you're running version 5.0.
+This driver requires kernel >= 5.1. If you're on kernel <= 5.0, please refer to
+tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0) for kernel < 5.0 or tag [v3.2](https://github.com/aymanbagabas/Huawei-WMI/tree/v3.2) if you're running version 5.0.
 
 Check out [matebook-applet](https://github.com/nekr0z/matebook-applet) for a GUI
 to control Fn-lock and battery protection.
