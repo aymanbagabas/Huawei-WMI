@@ -1,5 +1,8 @@
 # Huawei WMI laptop extras linux driver
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=7TMEEVMB4S4G8&currency_code=USD&source=url)
+[![Donate](https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-green)](https://www.buymeacoffee.com/aymanbagabas)
+
 **NOTE: Version v2.0 is the one in mainline kernel >= 5.0, this repository is used for
 testing and development purposes. v3.3 has been merged in kernel 5.5**
 
