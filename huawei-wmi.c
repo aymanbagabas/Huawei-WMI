@@ -37,10 +37,13 @@ enum {
 	BATTERY_THRESH_SET		= 0x00001003, /* \SBTT */
 	FN_LOCK_GET			= 0x00000604, /* \GFRS */
 	FN_LOCK_SET			= 0x00000704, /* \SFRS */
+	KBDLIGHT_GET			= 0x00000602, /* \GLIV */
+	KBDLIGHT_SET			= 0x00000702, /* \SLIV */
 	MICMUTE_LED_SET			= 0x00000b04, /* \SMLS */
 };
 
-union hwmi_arg {
+union hwmi_arg
+{
 	u64 cmd;
 	u8 args[8];
 };
@@ -61,6 +64,7 @@ struct huawei_wmi_debug {
 struct huawei_wmi {
 	bool battery_available;
 	bool fn_lock_available;
+	bool kbdlight_available;
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
@@ -598,6 +602,95 @@ static void huawei_wmi_fn_lock_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_fn_lock_state);
 }
 
+/* Keybaord backlight */
+
+static int huawei_wmi_kbdlight_get(int *level)
+{
+	u8 ret[0x100] = { 0 };
+	int err;
+
+	err = huawei_wmi_cmd(KBDLIGHT_GET, ret, 0x100);
+	if (err)
+		return err;
+
+	// 0x04 (off), 0x08 (level 1), 0x10 (level 2)
+	if (!ret[2])
+		return -ENODEV;
+
+	if (level) {
+		*level = -1;
+		while ((ret[2] >>= 1) >= 2) *level += 1;
+	}
+
+	return 0;
+}
+
+static int huawei_wmi_kbdlight_set(int level)
+{
+	union hwmi_arg arg;
+
+	// 0 (off), 1 (level 1), 2 (level 2)
+	if (level < 0 || level > 2)
+		return -EINVAL;
+
+	arg.cmd = KBDLIGHT_SET;
+	arg.args[2] = 2 << (level + 1); // 0x04 (off), 0x08 (level 1), 0x10 (level 2)
+
+	return huawei_wmi_cmd(arg.cmd, NULL, 0);
+}
+
+static ssize_t kbdlight_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, level;
+
+	err = huawei_wmi_kbdlight_get(&level);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d\n", level);
+}
+
+static ssize_t kbdlight_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int level, err;
+
+	if (kstrtoint(buf, 10, &level))
+		return -EINVAL;
+
+	err = huawei_wmi_kbdlight_set(level);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(kbdlight);
+
+static void huawei_wmi_kbdlight_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->kbdlight_available = true;
+	if (huawei_wmi_kbdlight_get(NULL)) {
+		huawei->kbdlight_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_kbdlight);
+}
+
+static void huawei_wmi_kbdlight_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->kbdlight_available)
+		device_remove_file(dev, &dev_attr_kbdlight);
+}
+
 /* debugfs */
 
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
@@ -806,6 +899,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
+		huawei_wmi_kbdlight_setup(&pdev->dev);
 		huawei_wmi_leds_setup(&pdev->dev);
 		huawei_wmi_fn_lock_setup(&pdev->dev);
 		huawei_wmi_battery_setup(&pdev->dev);
@@ -830,6 +924,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_debugfs_exit(&pdev->dev);
 		huawei_wmi_battery_exit(&pdev->dev);
 		huawei_wmi_fn_lock_exit(&pdev->dev);
+		huawei_wmi_kbdlight_exit(&pdev->dev);
 	}
 
 	return 0;
