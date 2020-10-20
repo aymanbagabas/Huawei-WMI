@@ -9,15 +9,17 @@
 #
 # Normal rules
 #
-.*
 *.o
 *.o.*
 *.a
 *.s
 *.ko
+*.ko.*
 *.so
 *.so.dbg
-*.mod.c
+*.cmd
+*.mod
+*.mod.*
 *.i
 *.lst
 *.symtypes

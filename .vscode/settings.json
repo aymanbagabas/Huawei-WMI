@@ -1,0 +1,5 @@
+{
+    "C_Cpp.workspaceSymbols": "All",
+    "C_Cpp.default.compileCommands": "compile_commands.json",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64"
+}
