@@ -14,10 +14,14 @@ device mapping to kernel. Supported features are:
 * Micmute LED, implemented in v2.0. Updated in v3.0 to work with newer laptops.
 * Battery protection, implemented in v3.0. Updated in v3.3 to use battery charge API.
 * Fn-lock, implemented v3.0.
+* Keyboard backlight timeout
 
 Battery protection can accessed from either `/sys/class/power_supply/BAT0/charge_control_{start,end}_threshold` or `/sys/devices/platform/huawei-wmi/charge_control_thresholds`
 
 Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/fn_lock_state`
+
+Keyboard backlight timeout can be accessed from `/sys/devices/platform/huawei-wmi/kbdlight_timeout`
+Value in seconds. 0 - timeout off
 
 This driver requires kernel >= 5.1. If you're on kernel <= 5.0, please refer to
 tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0) for kernel < 5.0 or tag [v3.2](https://github.com/aymanbagabas/Huawei-WMI/tree/v3.2) if you're running version 5.0.
