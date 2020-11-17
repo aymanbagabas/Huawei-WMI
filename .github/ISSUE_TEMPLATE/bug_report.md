@@ -23,7 +23,9 @@ A clear and concise description of what you expected to happen.
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
 
-**Desktop (please complete the following information):**
+**(please complete the following information):**
+ - acpidump `sudo acpidump > acpidump.out`
+ - dmidecode `dmidecode > dmidecode`
  - Kernel [e.g. 5.2.9-200.fc30.x86_64] `uname -a`
  - Distro [e.g. Fedora 30] `
  - Loaded WMI modules `lsmod | grep wmi`
