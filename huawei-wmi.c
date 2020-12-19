@@ -33,13 +33,15 @@
 /* HWMI commands */
 
 enum {
-	BATTERY_THRESH_GET		= 0x00001103, /* \GBTT */
-	BATTERY_THRESH_SET		= 0x00001003, /* \SBTT */
-	FN_LOCK_GET				= 0x00000604, /* \GFRS */
-	FN_LOCK_SET				= 0x00000704, /* \SFRS */
-	MICMUTE_LED_SET			= 0x00000b04, /* \SMLS */
-	KBDLIGHT_TIMEOUT_SET    = 0x00001106, /* \SKBT */
-	KBDLIGHT_TIMEOUT_GET    = 0x00001206, /* \GKBT */
+	BATTERY_THRESH_GET   = 0x00001103, /* \GBTT */
+	BATTERY_THRESH_SET   = 0x00001003, /* \SBTT */
+	FN_LOCK_GET          = 0x00000604, /* \GFRS */
+	FN_LOCK_SET          = 0x00000704, /* \SFRS */
+	KBDLIGHT_GET         = 0x00000602, /* \GLIV */
+	KBDLIGHT_SET         = 0x00000702, /* \SLIV */
+	MICMUTE_LED_SET      = 0x00000b04, /* \SMLS */
+	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
+	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
 };
 
 union hwmi_arg {
@@ -51,6 +53,7 @@ struct quirk_entry {
 	bool battery_reset;
 	bool ec_micmute;
 	bool report_brightness;
+	bool handle_kbdlight;
 };
 
 static struct quirk_entry *quirks;
@@ -63,6 +66,8 @@ struct huawei_wmi_debug {
 struct huawei_wmi {
 	bool battery_available;
 	bool fn_lock_available;
+	bool kbdlight_available;
+	bool kbdlight_quirk_input;
 	bool kbdlight_timeout_available;
 
 	struct huawei_wmi_debug debug;
@@ -75,25 +80,32 @@ struct huawei_wmi {
 
 static struct huawei_wmi *huawei_wmi;
 
+enum {
+	KBDLIGHT_KEY_0 = 0x293,
+	KBDLIGHT_KEY_1 = 0x294,
+	KBDLIGHT_KEY_2 = 0x295
+};
+
 static const struct key_entry huawei_wmi_keymap[] = {
-	{ KE_KEY,    0x281, { KEY_BRIGHTNESSDOWN } },
-	{ KE_KEY,    0x282, { KEY_BRIGHTNESSUP } },
-	{ KE_KEY,    0x284, { KEY_MUTE } },
-	{ KE_KEY,    0x285, { KEY_VOLUMEDOWN } },
-	{ KE_KEY,    0x286, { KEY_VOLUMEUP } },
-	{ KE_KEY,    0x287, { KEY_MICMUTE } },
-	{ KE_KEY,    0x289, { KEY_WLAN } },
+	{ KE_KEY,    0x281,          { KEY_BRIGHTNESSDOWN } },
+	{ KE_KEY,    0x282,          { KEY_BRIGHTNESSUP } },
+	{ KE_KEY,    0x284,          { KEY_MUTE } },
+	{ KE_KEY,    0x285,          { KEY_VOLUMEDOWN } },
+	{ KE_KEY,    0x286,          { KEY_VOLUMEUP } },
+	{ KE_KEY,    0x287,          { KEY_MICMUTE } },
+	{ KE_KEY,    0x289,          { KEY_WLAN } },
 	// Huawei |M| key
-	{ KE_KEY,    0x28a, { KEY_CONFIG } },
+	{ KE_KEY,    0x28a,          { KEY_CONFIG } },
 	// Keyboard backlit
-	{ KE_IGNORE, 0x293, { KEY_KBDILLUMTOGGLE } },
-	{ KE_IGNORE, 0x294, { KEY_KBDILLUMUP } },
-	{ KE_IGNORE, 0x295, { KEY_KBDILLUMUP } },
-	{ KE_END,	 0 }
+	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
+	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
+	{ KE_IGNORE, KBDLIGHT_KEY_2, { KEY_KBDILLUMUP } },
+	{ KE_END,    0 }
 };
 
 static int battery_reset = -1;
 static int report_brightness = -1;
+static int handle_kbdlight = -1;
 
 module_param(battery_reset, bint, 0444);
 MODULE_PARM_DESC(battery_reset,
@@ -101,6 +113,9 @@ MODULE_PARM_DESC(battery_reset,
 module_param(report_brightness, bint, 0444);
 MODULE_PARM_DESC(report_brightness,
 		"Report brightness keys.");
+module_param(handle_kbdlight, bint, 0444);
+MODULE_PARM_DESC(handle_kbdlight,
+		"Handle keyboard backlight events.");
 
 /* Quirks */
 
@@ -111,15 +126,22 @@ static int __init dmi_matched(const struct dmi_system_id *dmi)
 }
 
 static struct quirk_entry quirk_unknown = {
+	.handle_kbdlight = true,
 };
 
-static struct quirk_entry quirk_battery_reset = {
+static struct quirk_entry quirk_skip_kbdlight = {
+	.handle_kbdlight = false,
+};
+
+static struct quirk_entry quirk_mach_wx9 = {
 	.battery_reset = true,
+	.handle_kbdlight = false,
 };
 
 static struct quirk_entry quirk_matebook_x = {
 	.ec_micmute = true,
 	.report_brightness = true,
+	.handle_kbdlight = false,
 };
 
 static const struct dmi_system_id huawei_quirks[] = {
@@ -130,7 +152,7 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "MACH-WX9"),
 		},
-		.driver_data = &quirk_battery_reset
+		.driver_data = &quirk_mach_wx9
 	},
 	{
 		.callback = dmi_matched,
@@ -140,6 +162,42 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "HUAWEI MateBook X")
 		},
 		.driver_data = &quirk_matebook_x
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei KPL-W0X",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "KPL-W0X")
+		},
+		.driver_data = &quirk_skip_kbdlight
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei MACHC-WAX9",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MACHC-WAX9")
+		},
+		.driver_data = &quirk_unknown
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei NBLK-WAX9X",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "NBLK-WAX9X")
+		},
+		.driver_data = &quirk_unknown
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei HLYL-WXX9",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HLYL-WXX9")
+		},
+		.driver_data = &quirk_skip_kbdlight
 	},
 	{  }
 };
@@ -601,6 +659,107 @@ static void huawei_wmi_fn_lock_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_fn_lock_state);
 }
 
+/* Keyboard backlight */
+
+static int huawei_wmi_kbdlight_get(int *level)
+{
+	u8 ret[0x100] = { 0 };
+	int err;
+
+	err = huawei_wmi_cmd(KBDLIGHT_GET, ret, 0x100);
+	if (err)
+		return err;
+	if (!ret[2])
+		return -ENODEV;
+
+	/* Some models like the MACH-WX9 use 0x01, 0x02, and 0x04 for off, level 1,
+	 * and level 2 respectively rather than 0x04, 0x08, and 0x10.
+	 */
+	huawei_wmi->kbdlight_quirk_input = ret[1] == 0xff;
+
+	if (level) {
+		*level = 0;
+		while (ret[2] >>= 1) {
+			*level += 1;
+		}
+
+		if (ret[1] != 0xff)
+			*level -= 2;
+	}
+
+	return 0;
+}
+
+
+
+static int huawei_wmi_kbdlight_set(int level)
+{
+	union hwmi_arg arg;
+
+	// Huawei laptops only support 3 kbdlight levels
+	if (level < 0 || level > 2)
+		return -EINVAL;
+	if (!huawei_wmi->kbdlight_quirk_input)
+		level += 2;
+
+	arg.cmd = KBDLIGHT_SET;
+	arg.args[2] = 1 << level;
+
+	return huawei_wmi_cmd(arg.cmd, NULL, 0);
+}
+
+static ssize_t kbdlight_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, level;
+
+	err = huawei_wmi_kbdlight_get(&level);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d\n", level);
+}
+
+static ssize_t kbdlight_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int level, err;
+
+	if (kstrtoint(buf, 10, &level))
+		return -EINVAL;
+
+	err = huawei_wmi_kbdlight_set(level);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(kbdlight);
+
+static void huawei_wmi_kbdlight_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->kbdlight_available = true;
+	if (huawei_wmi_kbdlight_get(NULL)) {
+		huawei->kbdlight_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_kbdlight);
+}
+
+static void huawei_wmi_kbdlight_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->kbdlight_available)
+		device_remove_file(dev, &dev_attr_kbdlight);
+}
+
 /*Keyboard backlight timeout*/
 
 static int huawei_wmi_kbdlight_timeout_get(int *seconds)
@@ -775,6 +934,7 @@ static void huawei_wmi_debugfs_exit(struct device *dev)
 
 static void huawei_wmi_process_key(struct input_dev *idev, int code)
 {
+	struct huawei_wmi *huawei = dev_get_drvdata(idev->dev.parent);
 	const struct key_entry *key;
 
 	/*
@@ -808,6 +968,13 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 			(key->sw.code == KEY_BRIGHTNESSDOWN ||
 			key->sw.code == KEY_BRIGHTNESSUP))
 		return;
+
+	if (quirks && quirks->handle_kbdlight && huawei->kbdlight_available &&
+			(key->code == KBDLIGHT_KEY_0 ||
+			key->code == KBDLIGHT_KEY_1 ||
+			key->code == KBDLIGHT_KEY_2)) {
+		huawei_wmi_kbdlight_set(key->code - KBDLIGHT_KEY_0);
+	}
 
 	sparse_keymap_report_entry(idev, key, 1, true);
 }
@@ -891,6 +1058,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
+		huawei_wmi_kbdlight_setup(&pdev->dev);
 		huawei_wmi_leds_setup(&pdev->dev);
 		huawei_wmi_fn_lock_setup(&pdev->dev);
 		huawei_wmi_battery_setup(&pdev->dev);
@@ -916,6 +1084,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_debugfs_exit(&pdev->dev);
 		huawei_wmi_battery_exit(&pdev->dev);
 		huawei_wmi_fn_lock_exit(&pdev->dev);
+		huawei_wmi_kbdlight_exit(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_exit(&pdev->dev);
 	}
 
@@ -945,6 +1114,8 @@ static __init int huawei_wmi_init(void)
 		quirks->battery_reset = battery_reset;
 	if (report_brightness != -1)
 		quirks->report_brightness = report_brightness;
+	if (handle_kbdlight != -1)
+		quirks->handle_kbdlight = handle_kbdlight;
 
 	err = platform_driver_register(&huawei_wmi_driver);
 	if (err)
