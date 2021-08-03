@@ -40,6 +40,8 @@ enum {
 	KBDLIGHT_GET       = 0x00000602, /* \GLIV */
 	KBDLIGHT_SET       = 0x00000702, /* \SLIV */
 	MICMUTE_LED_SET    = 0x00000b04, /* \SMLS */
+	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
+	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
 };
 
 union hwmi_arg {
@@ -66,6 +68,7 @@ struct huawei_wmi {
 	bool fn_lock_available;
 	bool kbdlight_available;
 	bool kbdlight_quirk_input;
+	bool kbdlight_timeout_available;
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
@@ -186,6 +189,15 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "NBLK-WAX9X")
 		},
 		.driver_data = &quirk_unknown
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei HLYL-WXX9",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "HLYL-WXX9")
+		},
+		.driver_data = &quirk_skip_kbdlight
 	},
 	{  }
 };
@@ -746,6 +758,87 @@ static void huawei_wmi_kbdlight_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_kbdlight);
 }
 
+/*Keyboard backlight timeout*/
+
+static int huawei_wmi_kbdlight_timeout_get(int *seconds)
+{
+	u8 ret[0x100] = { 0 };
+	int err;
+
+	err = huawei_wmi_cmd(KBDLIGHT_TIMEOUT_GET, ret, 0x100);
+	if (err)
+		return err;
+
+	if (seconds)
+		*seconds = ret[1] + (ret[2] << 8);
+
+	return 0;
+}
+
+static int huawei_wmi_kbdlight_timeout_set(int seconds)
+{
+	union hwmi_arg arg;
+
+	arg.cmd = KBDLIGHT_TIMEOUT_SET;
+	arg.args[2] = (seconds & 0xff);
+	arg.args[3] = (seconds >> 8);
+
+	return huawei_wmi_cmd(arg.cmd, NULL, 0);
+
+}
+
+static ssize_t kbdlight_timeout_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, seconds;
+
+	err = huawei_wmi_kbdlight_timeout_get(&seconds);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d\n", seconds);
+}
+
+static ssize_t kbdlight_timeout_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int seconds, err;
+
+	if (kstrtoint(buf, 10, &seconds) ||
+			seconds < 0 || seconds > 0xffff)
+		return -EINVAL;
+
+	err = huawei_wmi_kbdlight_timeout_set(seconds);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(kbdlight_timeout);
+
+static void huawei_wmi_kbdlight_timeout_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	huawei->kbdlight_timeout_available = true;
+	if (huawei_wmi_kbdlight_timeout_get(NULL)) {
+		huawei->kbdlight_timeout_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_kbdlight_timeout);
+}
+
+static void huawei_wmi_kbdlight_timeout_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->kbdlight_timeout_available)
+		device_remove_file(dev, &dev_attr_kbdlight_timeout);
+}
+
 /* debugfs */
 
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
@@ -962,6 +1055,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
+		huawei_wmi_kbdlight_timeout_setup(&pdev->dev);
 		huawei_wmi_kbdlight_setup(&pdev->dev);
 		huawei_wmi_leds_setup(&pdev->dev);
 		huawei_wmi_fn_lock_setup(&pdev->dev);
@@ -988,6 +1082,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_battery_exit(&pdev->dev);
 		huawei_wmi_fn_lock_exit(&pdev->dev);
 		huawei_wmi_kbdlight_exit(&pdev->dev);
+		huawei_wmi_kbdlight_timeout_exit(&pdev->dev);
 	}
 
 	return 0;
