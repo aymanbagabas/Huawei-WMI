@@ -11,11 +11,15 @@
 #include <linux/dmi.h>
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
+#include <linux/kthread.h>
 #include <linux/leds.h>
+#include <linux/list.h>
+#include <linux/spinlock.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/power_supply.h>
+#include <linux/sched.h>
 #include <linux/sysfs.h>
 #include <linux/wmi.h>
 #include <acpi/battery.h>
@@ -45,6 +49,15 @@ union hwmi_arg {
 	u8 args[8];
 };
 
+struct hwmi_work {
+	struct list_head lh;
+	union hwmi_arg arg;
+	u8 out[0x100];
+	int err;
+	bool free;
+	bool done;
+};
+
 struct quirk_entry {
 	bool battery_reset;
 	bool ec_micmute;
@@ -66,8 +79,16 @@ struct huawei_wmi {
 	struct input_dev *idev[2];
 	struct led_classdev cdev;
 	struct device *dev;
+	u8 battery_thresh_start;
+	u8 battery_thresh_end;
 
 	struct mutex wmi_lock;
+	wait_queue_head_t wq;
+	int queued_work;
+	struct list_head work_queue;
+	struct spinlock work_lock;
+	struct spinlock queue_lock;
+	struct task_struct *worker;
 };
 
 static struct huawei_wmi *huawei_wmi;
@@ -251,6 +272,78 @@ fail_cmd:
 	return err;
 }
 
+struct hwmi_work *huawei_wmi_get_work(void)
+{
+	struct hwmi_work *work;
+
+	spin_lock(&huawei_wmi->queue_lock);
+	work = list_first_entry_or_null(&huawei_wmi->work_queue, struct hwmi_work, lh);
+	if (work)
+		list_del(&work->lh);
+
+	spin_unlock(&huawei_wmi->queue_lock);
+
+	return work;
+}
+
+int huawei_wmi_worker(void *data)
+{
+	struct hwmi_work *work;
+	int err;
+
+	dev_info(huawei_wmi->dev, "worker thread started...\n");
+	while (true)
+	{
+		wait_event(huawei_wmi->wq,
+			(work = huawei_wmi_get_work()) || kthread_should_stop());
+		if (kthread_should_stop()) break;
+
+		dev_info(huawei_wmi->dev, "received work cmd: %08llX pointer: %x\n", work->arg.cmd, work);
+		err = huawei_wmi_cmd(work->arg.cmd, work->out, 0x100);
+		if (err) {
+			work->err = err;
+		}
+
+		switch (work->arg.args[0]) {
+			case 0x03:
+			// switch (work->arg.args[1]) {
+				// SBTT (BATTERY_THRES_SET)
+				// case 0x10:
+					// dev_info(huawei_wmi->dev,
+						//  "sleeping because work\n");
+					// msleep(1000);
+					// break;
+			// }
+			// break;
+			default:
+			msleep(1000);
+		}
+
+		dev_info(huawei_wmi->dev, "work no %d finished cmd: %08llX\n", huawei_wmi->queued_work--, work->arg.cmd);
+		work->done = true;
+
+		if (work->free) devm_kfree(huawei_wmi->dev, work);
+	}
+
+	dev_info(huawei_wmi->dev, "worker thread stoped\n");
+	do_exit(0);
+}
+
+int huawei_wmi_queue_work(struct hwmi_work *work)
+{
+	int work_no;
+
+	dev_info(huawei_wmi->dev, "queuing work cmd: %08llX\n", work->arg.cmd);
+	spin_lock(&huawei_wmi->queue_lock);
+	list_add(&work->lh, &huawei_wmi->work_queue);
+	work_no = ++huawei_wmi->queued_work;
+	spin_unlock(&huawei_wmi->queue_lock);
+	wake_up(&huawei_wmi->wq);
+	dev_info(huawei_wmi->dev, "finished queuing work %d cmd: %08llX\n", work_no, work->arg.cmd);
+
+	return work_no;
+}
+
 /* LEDs */
 
 static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
@@ -320,36 +413,54 @@ static void huawei_wmi_leds_setup(struct device *dev)
 
 static int huawei_wmi_battery_get(int *start, int *end)
 {
-	u8 ret[0x100];
+	struct hwmi_work *work;
+	int work_no;
 	int err, i;
 
-	err = huawei_wmi_cmd(BATTERY_THRESH_GET, ret, 0x100);
-	if (err)
-		return err;
+	work = devm_kzalloc(huawei_wmi->dev, sizeof(struct hwmi_work), GFP_KERNEL);
+	work->free = false;
+	work->done = false;
+	work->arg.cmd = BATTERY_THRESH_GET;
+
+	work_no = huawei_wmi_queue_work(work);
+	while (true) {
+		if (huawei_wmi->queued_work < work_no || work->done) {
+			dev_info(huawei_wmi->dev, "finished work %d, queue %d\n", work_no, huawei_wmi->queued_work);
+			break;
+		}
+	}
+	// err = huawei_wmi_cmd(BATTERY_THRESH_GET, ret, 0x100);
+	// if (err)
+	// 	return err;
 
 	/* Find the last two non-zero values. Return status is ignored. */
 	i = 0xff;
 	do {
 		if (start)
-			*start = ret[i-1];
+			*start = work->out[i-1];
 		if (end)
-			*end = ret[i];
-	} while (i > 2 && !ret[i--]);
+			*end = work->out[i];
+	} while (i > 2 && !work->out[i--]);
+
+	devm_kfree(huawei_wmi->dev, work);
 
 	return 0;
 }
 
 static int huawei_wmi_battery_set(int start, int end)
 {
+	struct hwmi_work *work;
 	union hwmi_arg arg;
-	int err;
+	int err = 0;
 
 	if (start < 0 || end < 0 || start > 100 || end > 100)
 		return -EINVAL;
 
-	arg.cmd = BATTERY_THRESH_SET;
-	arg.args[2] = start;
-	arg.args[3] = end;
+	work = devm_kzalloc(huawei_wmi->dev, sizeof(struct hwmi_work), GFP_KERNEL);
+	work->free = true;
+	work->arg.cmd = BATTERY_THRESH_SET;
+	work->arg.args[2] = start;
+	work->arg.args[3] = end;
 
 	/* This is an edge case were some models turn battery protection
 	 * off without changing their thresholds values. We clear the
@@ -360,11 +471,11 @@ static int huawei_wmi_battery_set(int start, int end)
 		err = huawei_wmi_battery_set(0, 0);
 		if (err)
 			return err;
-
-		msleep(1000);
 	}
 
-	err = huawei_wmi_cmd(arg.cmd, NULL, 0);
+	huawei_wmi_queue_work(work);
+	huawei_wmi->battery_thresh_start = start;
+	huawei_wmi->battery_thresh_end = end;
 
 	return err;
 }
@@ -412,16 +523,13 @@ static ssize_t charge_control_start_threshold_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int err, start, end;
-
-	err = huawei_wmi_battery_get(NULL, &end);
-	if (err)
-		return err;
+	int err, start;
 
 	if (sscanf(buf, "%d", &start) != 1)
 		return -EINVAL;
 
-	err = huawei_wmi_battery_set(start, end);
+	dev_info(huawei_wmi->dev, "end: %d\n", huawei_wmi->battery_thresh_end);
+	err = huawei_wmi_battery_set(start, huawei_wmi->battery_thresh_end);
 	if (err)
 		return err;
 
@@ -432,16 +540,12 @@ static ssize_t charge_control_end_threshold_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	int err, start, end;
-
-	err = huawei_wmi_battery_get(&start, NULL);
-	if (err)
-		return err;
+	int err, end;
 
 	if (sscanf(buf, "%d", &end) != 1)
 		return -EINVAL;
 
-	err = huawei_wmi_battery_set(start, end);
+	err = huawei_wmi_battery_set(huawei_wmi->battery_thresh_start, end);
 	if (err)
 		return err;
 
@@ -493,13 +597,16 @@ static struct acpi_battery_hook huawei_wmi_battery_hook = {
 static void huawei_wmi_battery_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	int start, end;
 
 	huawei->battery_available = true;
-	if (huawei_wmi_battery_get(NULL, NULL)) {
+	if (huawei_wmi_battery_get(&start, &end)) {
 		huawei->battery_available = false;
 		return;
 	}
 
+	huawei->battery_thresh_start = start;
+	huawei->battery_thresh_end = end;
 	battery_hook_register(&huawei_wmi_battery_hook);
 	device_create_file(dev, &dev_attr_charge_control_thresholds);
 }
@@ -804,7 +911,10 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	}
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
+		INIT_LIST_HEAD(&huawei_wmi->work_queue);
+		init_waitqueue_head(&huawei_wmi->wq);
 		mutex_init(&huawei_wmi->wmi_lock);
+		huawei_wmi->worker = kthread_run(huawei_wmi_worker, NULL, "huawei-wmi worker");
 
 		huawei_wmi_leds_setup(&pdev->dev);
 		huawei_wmi_fn_lock_setup(&pdev->dev);
@@ -827,6 +937,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 	}
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
+		kthread_stop(huawei_wmi->worker);
 		huawei_wmi_debugfs_exit(&pdev->dev);
 		huawei_wmi_battery_exit(&pdev->dev);
 		huawei_wmi_fn_lock_exit(&pdev->dev);
