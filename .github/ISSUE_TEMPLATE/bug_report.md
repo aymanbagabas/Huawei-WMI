@@ -30,7 +30,7 @@ If applicable, add screenshots to help explain your problem.
  - Distro [e.g. Fedora 30] `
  - Loaded WMI modules `lsmod | grep wmi`
  - Dmesg log `dmesg > dmesg.txt`
- - ALSA log if applicable `alsa-info.sh`
+ - ALSA log `alsa-info.sh`
  - `evtest` if it's keyboard related. Run `sudo evtest` then choose "Huawei WMI hotkeys", test all hotkeys and submit output.
  - `acpi_listen` if it's keyboard related. Run `sudo acpi_listen` and test all hotkeys. Submit output.
 
