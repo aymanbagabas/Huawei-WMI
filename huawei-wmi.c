@@ -42,6 +42,8 @@ enum {
 	MICMUTE_LED_SET    = 0x00000b04, /* \SMLS */
 	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
 	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
+	POWER_UNLOCK_SET   = 0x00000F04, /* \STUB */
+	POWER_UNLOCK_GET   = 0x00000E04, /* \STUB */
 };
 
 union hwmi_arg {
@@ -69,6 +71,7 @@ struct huawei_wmi {
 	bool kbdlight_available;
 	bool kbdlight_quirk_input;
 	bool kbdlight_timeout_available;
+	bool power_unlock_available;
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
@@ -839,6 +842,86 @@ static void huawei_wmi_kbdlight_timeout_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_kbdlight_timeout);
 }
 
+/*Power unlock*/
+
+static int huawei_wmi_power_unlock_get(int *on)
+{
+	u8 ret[0x100] = { 0 };
+	int err;
+
+	err = huawei_wmi_cmd(POWER_UNLOCK_GET, ret, 0x100);
+	if (err)
+		return err;
+
+	if (on)
+		*on = ret[1];
+
+	return 0;
+}
+
+static int huawei_wmi_power_unlock_set(int on)
+{
+	union hwmi_arg arg;
+
+	arg.cmd = POWER_UNLOCK_SET;
+	arg.args[2] = on;
+
+	return huawei_wmi_cmd(arg.cmd, NULL, 0);
+
+}
+
+static ssize_t power_unlock_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, on;
+
+	err = huawei_wmi_power_unlock_get(&on);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d\n", on);
+}
+
+static ssize_t power_unlock_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int on, err;
+
+	if (kstrtoint(buf, 10, &on) ||
+			on < 0 || on > 1)
+		return -EINVAL;
+
+	err = huawei_wmi_power_unlock_set(on);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(power_unlock);
+
+static void huawei_wmi_power_unlock_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	huawei->power_unlock_available = true;
+	if (huawei_wmi_power_unlock_get(NULL)) {
+		huawei->power_unlock_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_power_unlock);
+}
+
+static void huawei_wmi_power_unlock_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->power_unlock_available)
+		device_remove_file(dev, &dev_attr_power_unlock);
+}
+
 /* debugfs */
 
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
@@ -1055,6 +1138,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
+		huawei_wmi_power_unlock_setup(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_setup(&pdev->dev);
 		huawei_wmi_kbdlight_setup(&pdev->dev);
 		huawei_wmi_leds_setup(&pdev->dev);
@@ -1083,6 +1167,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_fn_lock_exit(&pdev->dev);
 		huawei_wmi_kbdlight_exit(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_exit(&pdev->dev);
+		huawei_wmi_power_unlock_exit(&pdev->dev);
 	}
 
 	return 0;
