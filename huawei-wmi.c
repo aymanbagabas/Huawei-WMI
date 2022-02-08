@@ -970,21 +970,7 @@ static ssize_t fan2_speed_show(struct device *dev,
 
 	return sprintf(buf, "%d\n", rpm);
 }
-/*
-static ssize_t fan1_speed_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size)
-{
-	return 0;
-}
 
-static ssize_t fan2_speed_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size)
-{
-	return 0;
-}
-*/
 static DEVICE_ATTR_RO(fan1_speed);
 static DEVICE_ATTR_RO(fan2_speed);
 
