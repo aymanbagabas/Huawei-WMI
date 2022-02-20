@@ -18,7 +18,10 @@
 #include <linux/power_supply.h>
 #include <linux/sysfs.h>
 #include <linux/wmi.h>
+#include <linux/hwmon.h>
 #include <acpi/battery.h>
+
+#define HWMI_BUFF_SIZE 0x100
 
 /*
  * Huawei WMI GUIDs
@@ -79,6 +82,7 @@ struct huawei_wmi {
 	struct input_dev *idev[2];
 	struct led_classdev cdev;
 	struct device *dev;
+	struct device *hwmon;
 
 	struct mutex wmi_lock;
 };
@@ -267,7 +271,7 @@ static int huawei_wmi_cmd(u64 arg, u8 *buf, size_t buflen)
 			if (obj->buffer.length == 0x104) {
 				// Skip the first 4 bytes.
 				obj->buffer.pointer += 4;
-				len = 0x100;
+				len = HWMI_BUFF_SIZE;
 			} else {
 				dev_err(huawei->dev, "Bad buffer length, got %d\n", obj->buffer.length);
 				err = -EIO;
@@ -386,10 +390,10 @@ static void huawei_wmi_leds_setup(struct device *dev)
 
 static int huawei_wmi_battery_get(int *start, int *end)
 {
-	u8 ret[0x100];
+	u8 ret[HWMI_BUFF_SIZE];
 	int err, i;
 
-	err = huawei_wmi_cmd(BATTERY_THRESH_GET, ret, 0x100);
+	err = huawei_wmi_cmd(BATTERY_THRESH_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
@@ -584,10 +588,10 @@ static void huawei_wmi_battery_exit(struct device *dev)
 
 static int huawei_wmi_fn_lock_get(int *on)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err, i;
 
-	err = huawei_wmi_cmd(FN_LOCK_GET, ret, 0x100);
+	err = huawei_wmi_cmd(FN_LOCK_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
@@ -668,10 +672,10 @@ static void huawei_wmi_fn_lock_exit(struct device *dev)
 
 static int huawei_wmi_kbdlight_get(int *level)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
 
-	err = huawei_wmi_cmd(KBDLIGHT_GET, ret, 0x100);
+	err = huawei_wmi_cmd(KBDLIGHT_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 	if (!ret[2])
@@ -767,15 +771,15 @@ static void huawei_wmi_kbdlight_exit(struct device *dev)
 
 static int huawei_wmi_kbdlight_timeout_get(int *seconds)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
 
-	err = huawei_wmi_cmd(KBDLIGHT_TIMEOUT_GET, ret, 0x100);
+	err = huawei_wmi_cmd(KBDLIGHT_TIMEOUT_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
 	if (seconds)
-		*seconds = ret[1] + (ret[2] << 8);
+		*seconds = ret[1] | (ret[2] << 8);
 
 	return 0;
 }
@@ -848,10 +852,10 @@ static void huawei_wmi_kbdlight_timeout_exit(struct device *dev)
 
 static int huawei_wmi_power_unlock_get(int *on)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
 
-	err = huawei_wmi_cmd(POWER_UNLOCK_GET, ret, 0x100);
+	err = huawei_wmi_cmd(POWER_UNLOCK_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
@@ -928,24 +932,24 @@ static void huawei_wmi_power_unlock_exit(struct device *dev)
 
 static int huawei_wmi_fan_speed_get(u8 num, int *rpm)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
 	
 	union hwmi_arg arg;
 	arg.cmd = FAN_SPEED_GET;
 	arg.args[2] = num;
 
-	err = huawei_wmi_cmd(arg.cmd, ret, 0x100);
+	err = huawei_wmi_cmd(arg.cmd, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
 	if (rpm)
-		*rpm = ret[1] + (ret[2] << 8);
+		*rpm = ret[1] | (ret[2] << 8);
 
 	return 0;
 }
 
-static ssize_t fan1_speed_show(struct device *dev,
+static ssize_t fan1_input_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
@@ -958,7 +962,7 @@ static ssize_t fan1_speed_show(struct device *dev,
 	return sprintf(buf, "%d\n", rpm);
 }
 
-static ssize_t fan2_speed_show(struct device *dev,
+static ssize_t fan2_input_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
 {
@@ -971,29 +975,39 @@ static ssize_t fan2_speed_show(struct device *dev,
 	return sprintf(buf, "%d\n", rpm);
 }
 
-static DEVICE_ATTR_RO(fan1_speed);
-static DEVICE_ATTR_RO(fan2_speed);
+static DEVICE_ATTR_RO(fan1_input);
+static DEVICE_ATTR_RO(fan2_input);
 
 static void huawei_wmi_fan_speed_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	huawei->fan_speed_available = true;
-	if (huawei_wmi_fan_speed_get(0, NULL)) {
+	if (huawei_wmi_fan_speed_get(0, NULL)) 
+	{
 		huawei->fan_speed_available = false;
 		return;
 	}
 
-	device_create_file(dev, &dev_attr_fan1_speed);
-	device_create_file(dev, &dev_attr_fan2_speed);
+	device_create_file(dev, &dev_attr_fan1_input);
+	device_create_file(dev, &dev_attr_fan2_input);
+	
+	huawei->hwmon = hwmon_device_register_with_groups(dev, "huawei_wmi_sensors", NULL, NULL);
+	device_create_file(huawei->hwmon, &dev_attr_fan1_input);
+	device_create_file(huawei->hwmon, &dev_attr_fan2_input);
+
 }
 
 static void huawei_wmi_fan_speed_exit(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	if (huawei->fan_speed_available){
-		device_remove_file(dev, &dev_attr_fan1_speed);
-		device_remove_file(dev, &dev_attr_fan2_speed);
+	if (huawei->fan_speed_available)
+	{
+		device_remove_file(dev, &dev_attr_fan1_input);
+		device_remove_file(dev, &dev_attr_fan2_input);
+		device_remove_file(huawei->hwmon, &dev_attr_fan1_input);
+		device_remove_file(huawei->hwmon, &dev_attr_fan2_input);
+		hwmon_device_unregister(huawei->hwmon);
 	}
 }
 
