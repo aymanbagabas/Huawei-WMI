@@ -48,6 +48,7 @@ enum {
 	POWER_UNLOCK_SET   = 0x00000F04, /* \STUB */
 	POWER_UNLOCK_GET   = 0x00000E04, /* \STUB */
 	FAN_SPEED_GET      = 0x00000802, /* \GFNS */
+	TEMP_GET           = 0x00000202, /* \GTMP */
 };
 
 union hwmi_arg {
@@ -77,6 +78,7 @@ struct huawei_wmi {
 	bool kbdlight_timeout_available;
 	bool power_unlock_available;
 	bool fan_speed_available;
+	bool temp_available;
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
@@ -105,6 +107,10 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_KEY,    0x289,          { KEY_WLAN } },
 	// Huawei |M| key
 	{ KE_KEY,    0x28a,          { KEY_CONFIG } },
+	// Power unlock (Fn+P)
+	{ KE_KEY,    0x2a0,          { KEY_BATTERY } },
+ 	{ KE_KEY,    0x2a1,          { KEY_BATTERY } },
+ 	{ KE_KEY,    0x2a6,          { KEY_BATTERY } },
 	// Keyboard backlit
 	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
@@ -928,6 +934,8 @@ static void huawei_wmi_power_unlock_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_power_unlock);
 }
 
+/*Hwmon subdriver*/
+
 /*Fan speed*/
 
 static int huawei_wmi_fan_speed_get(u8 num, int *rpm)
@@ -988,13 +996,8 @@ static void huawei_wmi_fan_speed_setup(struct device *dev)
 		return;
 	}
 
-	device_create_file(dev, &dev_attr_fan1_input);
-	device_create_file(dev, &dev_attr_fan2_input);
-	
-	huawei->hwmon = hwmon_device_register_with_groups(dev, "huawei_wmi_sensors", NULL, NULL);
 	device_create_file(huawei->hwmon, &dev_attr_fan1_input);
 	device_create_file(huawei->hwmon, &dev_attr_fan2_input);
-
 }
 
 static void huawei_wmi_fan_speed_exit(struct device *dev)
@@ -1003,11 +1006,93 @@ static void huawei_wmi_fan_speed_exit(struct device *dev)
 
 	if (huawei->fan_speed_available)
 	{
-		device_remove_file(dev, &dev_attr_fan1_input);
-		device_remove_file(dev, &dev_attr_fan2_input);
 		device_remove_file(huawei->hwmon, &dev_attr_fan1_input);
 		device_remove_file(huawei->hwmon, &dev_attr_fan2_input);
-		hwmon_device_unregister(huawei->hwmon);
+	}
+}
+
+/*Temp*/
+/*
+ *HVY-WXX9_1.8 and WRT-WX9_? have more temp zone
+ *
+ *0x00 CTMP cpu     TP00
+ *0x01              TP01
+ *0x05 TSLO         TP08
+ *0x06              TP06
+ *0x07 TNTC         TP02
+ *0x08 CNTC         TP03
+ *0x0B DNTC         TP05
+ *0x0E BTMP battery BTEM
+ *0x0F			    TP0C
+ *0x15              TP07
+ *0x16              TP04
+ */
+
+static int huawei_wmi_temp_get(u8 num, int *temp)
+{
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
+	int err;
+	
+	union hwmi_arg arg;
+	arg.cmd = TEMP_GET;
+	arg.args[2] = num;
+
+	err = huawei_wmi_cmd(arg.cmd, ret, HWMI_BUFF_SIZE);
+	if (err)
+		return err;
+
+	if (temp)
+		*temp = ret[2];
+
+	return 0;
+}
+
+static ssize_t temp1_input_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, temp;
+
+	err = huawei_wmi_temp_get(0x0E, &temp);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d000\n", rpm);
+}
+
+static DEVICE_ATTR_RO(temp1_input);
+
+static ssize_t temp1_label_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	return sprintf(buf, "battery\n");
+}
+
+static DEVICE_ATTR_RO(temp1_label);
+
+static void huawei_wmi_temp_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+	huawei->temp_available = true;
+	if (huawei_wmi_temp_get(0, NULL)) 
+	{
+		huawei->temp_available = false;
+		return;
+	}
+
+	device_create_file(huawei->hwmon, &dev_attr_temp1_input);
+	device_create_file(huawei->hwmon, &dev_attr_temp1_label);
+}
+
+static void huawei_wmi_temp_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->temp_available)
+	{
+		device_remove_file(huawei->hwmon, &dev_attr_temp1_label);
+		device_remove_file(huawei->hwmon, &dev_attr_temp1_input);
 	}
 }
 
@@ -1227,7 +1312,16 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
-		huawei_wmi_fan_speed_setup(&pdev->dev);
+		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi_sensors", NULL, NULL);
+		if (IS_ERR(huawei_wmi->hwmon)) 
+		{
+			huawei_wmi->hwmon = NULL;
+		}
+		else
+		{
+			huawei_wmi_fan_speed_setup(&pdev->dev);
+			huawei_wmi_temp_setup(&pdev->dev);
+		}
 		huawei_wmi_power_unlock_setup(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_setup(&pdev->dev);
 		huawei_wmi_kbdlight_setup(&pdev->dev);
@@ -1258,7 +1352,12 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_kbdlight_exit(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_exit(&pdev->dev);
 		huawei_wmi_power_unlock_exit(&pdev->dev);
-		huawei_wmi_fan_speed_exit(&pdev->dev);
+		if (huawei_wmi->hwmon)
+		{
+			huawei_wmi_temp_exit(&pdev->dev);
+			huawei_wmi_fan_speed_exit(&pdev->dev);
+			hwmon_device_unregister(huawei_wmi->hwmon);
+		}
 	}
 
 	return 0;
@@ -1299,7 +1398,6 @@ static __init int huawei_wmi_init(void)
 		err = PTR_ERR(pdev);
 		goto pdev_err;
 	}
-
 	return 0;
 
 pdev_err:
