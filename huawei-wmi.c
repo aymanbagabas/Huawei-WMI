@@ -1057,7 +1057,7 @@ static ssize_t temp1_input_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d000\n", rpm);
+	return sprintf(buf, "%d000\n", temp);
 }
 
 static DEVICE_ATTR_RO(temp1_input);
