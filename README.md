@@ -45,9 +45,6 @@ Note: change `VER` to the desired module version.
 
 ```sh
 sudo dkms ldtarball --archive=huawei-wmi-VER-source-only.dkms.tar.gz
-# For autoinstallation
-sudo dkms autoinstall -m huawei-wmi/VER
-# For one-time installation
 sudo dkms install huawei-wmi/VER
 ```
 3. Reboot
