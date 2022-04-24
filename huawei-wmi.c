@@ -36,19 +36,19 @@
 /* HWMI commands */
 
 enum {
-	BATTERY_THRESH_GET = 0x00001103, /* \GBTT */
-	BATTERY_THRESH_SET = 0x00001003, /* \SBTT */
-	FN_LOCK_GET        = 0x00000604, /* \GFRS */
-	FN_LOCK_SET        = 0x00000704, /* \SFRS */
-	KBDLIGHT_GET       = 0x00000602, /* \GLIV */
-	KBDLIGHT_SET       = 0x00000702, /* \SLIV */
-	MICMUTE_LED_SET    = 0x00000b04, /* \SMLS */
+	BATTERY_THRESH_GET   = 0x00001103, /* \GBTT */
+	BATTERY_THRESH_SET   = 0x00001003, /* \SBTT */
+	FN_LOCK_GET          = 0x00000604, /* \GFRS */
+	FN_LOCK_SET          = 0x00000704, /* \SFRS */
+	KBDLIGHT_GET         = 0x00000602, /* \GLIV */
+	KBDLIGHT_SET         = 0x00000702, /* \SLIV */
+	MICMUTE_LED_SET      = 0x00000b04, /* \SMLS */
 	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
 	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
-	POWER_UNLOCK_SET   = 0x00000F04, /* \STUB */
-	POWER_UNLOCK_GET   = 0x00000E04, /* \STUB */
-	FAN_SPEED_GET      = 0x00000802, /* \GFNS */
-	TEMP_GET           = 0x00000202, /* \GTMP */
+	POWER_UNLOCK_SET     = 0x00000F04, /* \STUB */
+	POWER_UNLOCK_GET     = 0x00000E04, /* \STUB */
+	FAN_SPEED_GET        = 0x00000802, /* \GFNS */
+	TEMP_GET             = 0x00000202, /* \GTMP */
 };
 
 union hwmi_arg {
@@ -83,6 +83,8 @@ struct huawei_wmi {
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
 	struct led_classdev cdev;
+	struct led_classdev fn_cdev;
+	struct led_classdev KCMS_cdev;
 	struct device *dev;
 	struct device *hwmon;
 
@@ -108,9 +110,9 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	// Huawei |M| key
 	{ KE_KEY,    0x28a,          { KEY_CONFIG } },
 	// Power unlock (Fn+P)
-	{ KE_KEY,    0x2a0,          { KEY_BATTERY } },
- 	{ KE_KEY,    0x2a1,          { KEY_BATTERY } },
- 	{ KE_KEY,    0x2a6,          { KEY_BATTERY } },
+	{ KE_KEY,    0x2a0,          { KEY_PROG1 } },
+ 	{ KE_KEY,    0x2a1,          { KEY_PROG1 } },
+ 	{ KE_KEY,    0x2a6,          { KEY_PROG1 } },
 	// Keyboard backlit
 	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
@@ -1023,7 +1025,7 @@ static void huawei_wmi_fan_speed_exit(struct device *dev)
  *0x08 CNTC         TP03
  *0x0B DNTC         TP05
  *0x0E BTMP battery BTEM
- *0x0F			    TP0C
+ *0x0F              TP0C
  *0x15              TP07
  *0x16              TP04
  */
@@ -1094,6 +1096,94 @@ static void huawei_wmi_temp_exit(struct device *dev)
 		device_remove_file(huawei->hwmon, &dev_attr_temp1_label);
 		device_remove_file(huawei->hwmon, &dev_attr_temp1_input);
 	}
+}
+
+/* EC subdriver */
+
+static int read_ec_by_name(char *acpi_method, u64 *value)
+{
+	acpi_handle handle;
+	acpi_status status;
+	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+	union acpi_object *obj;
+
+	if (!acpi_method)
+		goto read_ec_by_name_err;
+
+	handle = ec_get_handle();
+	if (!handle)
+		goto read_ec_by_name_err;
+
+	status = acpi_evaluate_object(handle, acpi_method, NULL, &buffer);
+    if (ACPI_FAILURE(status))
+		goto read_ec_by_name_err;
+
+	obj = buffer.pointer;
+	if (obj->type == ACPI_TYPE_INTEGER){
+		if (value){
+			*value = obj->integer.value;
+		}
+	}
+	else {
+		goto read_ec_by_name_err;
+	}
+	kfree(buffer.pointer);
+	return 0;
+
+read_ec_by_name_err:
+	kfree(buffer.pointer);
+	return -ENODEV;
+}
+
+/*FN led (read only)*/
+static enum led_brightness huawei_wmi_fn_led_get(struct led_classdev *led_cdev)
+{
+	u64 value;
+	int err;
+
+	err = read_ec_by_name("FNKL", &value);
+	if (err)
+		return err;
+
+	return value;
+}
+
+static void huawei_wmi_fn_led_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->fn_cdev.name = "platform::fn_led";
+	huawei->fn_cdev.max_brightness = 1;
+	huawei->fn_cdev.brightness_get = &huawei_wmi_fn_led_get;
+	huawei->fn_cdev.dev = dev;
+
+	devm_led_classdev_register(dev, &huawei->fn_cdev);
+}
+
+/*Keyboard backlight level (read only)*/
+
+static enum led_brightness huawei_wmi_KCMS_get(struct led_classdev *led_cdev)
+{
+	u64 value;
+	int err;
+
+	err = read_ec_by_name("KCMS", &value);
+	if (err)
+		return err;
+
+	return value;
+}
+
+static void huawei_wmi_KCMS_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->KCMS_cdev.name = "platform::KCMS";
+	huawei->KCMS_cdev.max_brightness = 255;
+	huawei->KCMS_cdev.brightness_get = &huawei_wmi_KCMS_get;
+	huawei->KCMS_cdev.dev = dev;
+
+	devm_led_classdev_register(dev, &huawei->KCMS_cdev);
 }
 
 /* debugfs */
@@ -1312,6 +1402,9 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
+		huawei_wmi_KCMS_setup(&pdev->dev);
+		huawei_wmi_fn_led_setup(&pdev->dev);
+
 		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi_sensors", NULL, NULL);
 		if (IS_ERR(huawei_wmi->hwmon)) 
 		{
@@ -1358,6 +1451,7 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 			huawei_wmi_fan_speed_exit(&pdev->dev);
 			hwmon_device_unregister(huawei_wmi->hwmon);
 		}
+
 	}
 
 	return 0;
