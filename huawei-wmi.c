@@ -36,19 +36,19 @@
 /* HWMI commands */
 
 enum {
-	BATTERY_THRESH_GET = 0x00001103, /* \GBTT */
-	BATTERY_THRESH_SET = 0x00001003, /* \SBTT */
-	FN_LOCK_GET        = 0x00000604, /* \GFRS */
-	FN_LOCK_SET        = 0x00000704, /* \SFRS */
-	KBDLIGHT_GET       = 0x00000602, /* \GLIV */
-	KBDLIGHT_SET       = 0x00000702, /* \SLIV */
-	MICMUTE_LED_SET    = 0x00000b04, /* \SMLS */
+	BATTERY_THRESH_GET   = 0x00001103, /* \GBTT */
+	BATTERY_THRESH_SET   = 0x00001003, /* \SBTT */
+	FN_LOCK_GET          = 0x00000604, /* \GFRS */
+	FN_LOCK_SET          = 0x00000704, /* \SFRS */
+	KBDLIGHT_GET         = 0x00000602, /* \GLIV */
+	KBDLIGHT_SET         = 0x00000702, /* \SLIV */
+	MICMUTE_LED_SET      = 0x00000b04, /* \SMLS */
 	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
 	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
-	POWER_UNLOCK_SET   = 0x00000F04, /* \STUB */
-	POWER_UNLOCK_GET   = 0x00000E04, /* \STUB */
-	FAN_SPEED_GET      = 0x00000802, /* \GFNS */
-	TEMP_GET           = 0x00000202, /* \GTMP */
+	POWER_UNLOCK_SET     = 0x00000F04, /* \STUB */
+	POWER_UNLOCK_GET     = 0x00000E04, /* \STUB */
+	FAN_SPEED_GET        = 0x00000802, /* \GFNS */
+	TEMP_GET             = 0x00000202, /* \GTMP */
 };
 
 union hwmi_arg {
@@ -83,6 +83,8 @@ struct huawei_wmi {
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
 	struct led_classdev cdev;
+	struct led_classdev fn_cdev;
+	struct led_classdev KCMS_cdev;
 	struct device *dev;
 	struct device *hwmon;
 
@@ -108,9 +110,9 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	// Huawei |M| key
 	{ KE_KEY,    0x28a,          { KEY_CONFIG } },
 	// Power unlock (Fn+P)
-	{ KE_KEY,    0x2a0,          { KEY_BATTERY } },
- 	{ KE_KEY,    0x2a1,          { KEY_BATTERY } },
- 	{ KE_KEY,    0x2a6,          { KEY_BATTERY } },
+	{ KE_KEY,    0x2a0,          { KEY_PROG1 } },
+ 	{ KE_KEY,    0x2a1,          { KEY_PROG1 } },
+ 	{ KE_KEY,    0x2a6,          { KEY_PROG1 } },
 	// Keyboard backlit
 	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
@@ -1023,7 +1025,7 @@ static void huawei_wmi_fan_speed_exit(struct device *dev)
  *0x08 CNTC         TP03
  *0x0B DNTC         TP05
  *0x0E BTMP battery BTEM
- *0x0F			    TP0C
+ *0x0F              TP0C
  *0x15              TP07
  *0x16              TP04
  */
@@ -1047,29 +1049,49 @@ static int huawei_wmi_temp_get(u8 num, int *temp)
 	return 0;
 }
 
-static ssize_t temp1_input_show(struct device *dev,
-		struct device_attribute *attr,
-		char *buf)
-{
-	int err, temp;
+#define CREATE_TEMP_ATTR(_idxA, _idxB, _idxC)                   \
+	static ssize_t temp##_idxA##_input_show(struct device *dev, \
+			struct device_attribute *attr,                      \
+			char *buf)                                          \
+	{                                                           \
+		int err, temp;                                          \
+		err = huawei_wmi_temp_get(_idxB, &temp);                \
+		if (err)                                                \
+			return err;                                         \
+	                                                            \
+		return sprintf(buf, "%d000\n", temp);                   \
+	}                                                           \
+	                                                            \
+	static DEVICE_ATTR_RO(temp##_idxA##_input);                 \
+	                                                            \
+	static ssize_t temp##_idxA##_label_show(struct device *dev, \
+			struct device_attribute *attr,                      \
+			char *buf)                                          \
+	{                                                           \
+		return sprintf(buf, _idxC);                             \
+	}                                                           \
+	                                                            \
+	static DEVICE_ATTR_RO(temp##_idxA##_label);                 \
 
-	err = huawei_wmi_temp_get(0x0E, &temp);
-	if (err)
-		return err;
+CREATE_TEMP_ATTR(1, 0x00, "cpu\n")
+CREATE_TEMP_ATTR(2, 0x01, "TP01\n")
+CREATE_TEMP_ATTR(3, 0x05, "TSLO\n")
+CREATE_TEMP_ATTR(4, 0x06, "TP06\n")
+CREATE_TEMP_ATTR(5, 0x07, "TNTC\n")
+CREATE_TEMP_ATTR(6, 0x08, "CNTC\n")
+CREATE_TEMP_ATTR(7, 0x0B, "DNTC\n")
+CREATE_TEMP_ATTR(8, 0x0E, "battery\n")
+CREATE_TEMP_ATTR(9, 0x0F, "TP0C\n")
+CREATE_TEMP_ATTR(10, 0x15, "TP07\n")
+CREATE_TEMP_ATTR(11, 0x16, "TP04\n")
 
-	return sprintf(buf, "%d000\n", temp);
-}
+#define CREATE_TEMP_FILE(_idxA)                                       \
+	device_create_file(huawei->hwmon, &dev_attr_temp##_idxA##_input); \
+	device_create_file(huawei->hwmon, &dev_attr_temp##_idxA##_label); \
 
-static DEVICE_ATTR_RO(temp1_input);
-
-static ssize_t temp1_label_show(struct device *dev,
-		struct device_attribute *attr,
-		char *buf)
-{
-	return sprintf(buf, "battery\n");
-}
-
-static DEVICE_ATTR_RO(temp1_label);
+#define REMOVE_TEMP_FILE(_idxA)                                       \
+	device_remove_file(huawei->hwmon, &dev_attr_temp##_idxA##_label); \
+	device_remove_file(huawei->hwmon, &dev_attr_temp##_idxA##_input); \
 
 static void huawei_wmi_temp_setup(struct device *dev)
 {
@@ -1081,8 +1103,17 @@ static void huawei_wmi_temp_setup(struct device *dev)
 		return;
 	}
 
-	device_create_file(huawei->hwmon, &dev_attr_temp1_input);
-	device_create_file(huawei->hwmon, &dev_attr_temp1_label);
+	CREATE_TEMP_FILE(1)
+	CREATE_TEMP_FILE(2)
+	CREATE_TEMP_FILE(3)
+	CREATE_TEMP_FILE(4)
+	CREATE_TEMP_FILE(5)
+	CREATE_TEMP_FILE(6)
+	CREATE_TEMP_FILE(7)
+	CREATE_TEMP_FILE(8)
+	CREATE_TEMP_FILE(9)
+	CREATE_TEMP_FILE(10)
+	CREATE_TEMP_FILE(11)
 }
 
 static void huawei_wmi_temp_exit(struct device *dev)
@@ -1091,9 +1122,106 @@ static void huawei_wmi_temp_exit(struct device *dev)
 
 	if (huawei->temp_available)
 	{
-		device_remove_file(huawei->hwmon, &dev_attr_temp1_label);
-		device_remove_file(huawei->hwmon, &dev_attr_temp1_input);
+		REMOVE_TEMP_FILE(1)
+		REMOVE_TEMP_FILE(2)
+		REMOVE_TEMP_FILE(3)
+		REMOVE_TEMP_FILE(4)
+		REMOVE_TEMP_FILE(5)
+		REMOVE_TEMP_FILE(6)
+		REMOVE_TEMP_FILE(7)
+		REMOVE_TEMP_FILE(8)
+		REMOVE_TEMP_FILE(9)
+		REMOVE_TEMP_FILE(10)
+		REMOVE_TEMP_FILE(11)
 	}
+}
+
+/* EC subdriver */
+
+static int read_ec_by_name(char *acpi_method, u64 *value)
+{
+	acpi_handle handle;
+	acpi_status status;
+	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+	union acpi_object *obj;
+
+	if (!acpi_method)
+		goto read_ec_by_name_err;
+
+	handle = ec_get_handle();
+	if (!handle)
+		goto read_ec_by_name_err;
+
+	status = acpi_evaluate_object(handle, acpi_method, NULL, &buffer);
+    if (ACPI_FAILURE(status))
+		goto read_ec_by_name_err;
+
+	obj = buffer.pointer;
+	if (obj->type == ACPI_TYPE_INTEGER){
+		if (value){
+			*value = obj->integer.value;
+		}
+	}
+	else {
+		goto read_ec_by_name_err;
+	}
+	kfree(buffer.pointer);
+	return 0;
+
+read_ec_by_name_err:
+	kfree(buffer.pointer);
+	return -ENODEV;
+}
+
+/*FN led (read only)*/
+static enum led_brightness huawei_wmi_fn_led_get(struct led_classdev *led_cdev)
+{
+	u64 value;
+	int err;
+
+	err = read_ec_by_name("FNKL", &value);
+	if (err)
+		return err;
+
+	return value;
+}
+
+static void huawei_wmi_fn_led_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->fn_cdev.name = "platform::fn_led";
+	huawei->fn_cdev.max_brightness = 1;
+	huawei->fn_cdev.brightness_get = &huawei_wmi_fn_led_get;
+	huawei->fn_cdev.dev = dev;
+
+	devm_led_classdev_register(dev, &huawei->fn_cdev);
+}
+
+/*Keyboard backlight level (read only)*/
+
+static enum led_brightness huawei_wmi_KCMS_get(struct led_classdev *led_cdev)
+{
+	u64 value;
+	int err;
+
+	err = read_ec_by_name("KCMS", &value);
+	if (err)
+		return err;
+
+	return value;
+}
+
+static void huawei_wmi_KCMS_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->KCMS_cdev.name = "platform::KCMS";
+	huawei->KCMS_cdev.max_brightness = 255;
+	huawei->KCMS_cdev.brightness_get = &huawei_wmi_KCMS_get;
+	huawei->KCMS_cdev.dev = dev;
+
+	devm_led_classdev_register(dev, &huawei->KCMS_cdev);
 }
 
 /* debugfs */
@@ -1312,7 +1440,10 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
 
-		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi_sensors", NULL, NULL);
+		huawei_wmi_KCMS_setup(&pdev->dev);
+		huawei_wmi_fn_led_setup(&pdev->dev);
+
+		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi", NULL, NULL);
 		if (IS_ERR(huawei_wmi->hwmon)) 
 		{
 			huawei_wmi->hwmon = NULL;
@@ -1321,6 +1452,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		{
 			huawei_wmi_fan_speed_setup(&pdev->dev);
 			huawei_wmi_temp_setup(&pdev->dev);
+			//huawei_wmi_temp_g_setup(&pdev->dev);
 		}
 		huawei_wmi_power_unlock_setup(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_setup(&pdev->dev);
@@ -1354,10 +1486,12 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_power_unlock_exit(&pdev->dev);
 		if (huawei_wmi->hwmon)
 		{
+			//huawei_wmi_temp_g_exit(&pdev->dev);
 			huawei_wmi_temp_exit(&pdev->dev);
 			huawei_wmi_fan_speed_exit(&pdev->dev);
 			hwmon_device_unregister(huawei_wmi->hwmon);
 		}
+
 	}
 
 	return 0;
