@@ -49,6 +49,7 @@ struct quirk_entry {
 	bool battery_reset;
 	bool ec_micmute;
 	bool report_brightness;
+	bool havent_micmute_led;
 };
 
 static struct quirk_entry *quirks;
@@ -110,6 +111,10 @@ static int __init dmi_matched(const struct dmi_system_id *dmi)
 static struct quirk_entry quirk_unknown = {
 };
 
+static struct quirk_entry quirk_without_micmute_led = {
+	.havent_micmute_led = true,
+};
+
 static struct quirk_entry quirk_battery_reset = {
 	.battery_reset = true,
 };
@@ -137,6 +142,15 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "HUAWEI MateBook X")
 		},
 		.driver_data = &quirk_matebook_x
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei MRC-WX0",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MRC-WX0")
+		},
+		.driver_data = &quirk_without_micmute_led
 	},
 	{  }
 };
@@ -304,6 +318,10 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 static void huawei_wmi_leds_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	// I put it after variable declaration to avoid compilation warning
+	if (quirks && quirks->havent_micmute_led)
+		return;
 
 	huawei->cdev.name = "platform::micmute";
 	huawei->cdev.max_brightness = 1;
