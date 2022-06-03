@@ -36,19 +36,23 @@
 /* HWMI commands */
 
 enum {
-	BATTERY_THRESH_GET   = 0x00001103, /* \GBTT */
-	BATTERY_THRESH_SET   = 0x00001003, /* \SBTT */
-	FN_LOCK_GET          = 0x00000604, /* \GFRS */
-	FN_LOCK_SET          = 0x00000704, /* \SFRS */
-	KBDLIGHT_GET         = 0x00000602, /* \GLIV */
-	KBDLIGHT_SET         = 0x00000702, /* \SLIV */
-	MICMUTE_LED_SET      = 0x00000b04, /* \SMLS */
-	KBDLIGHT_TIMEOUT_SET = 0x00001106, /* \SKBT */
-	KBDLIGHT_TIMEOUT_GET = 0x00001206, /* \GKBT */
-	POWER_UNLOCK_SET     = 0x00000F04, /* \STUB */
-	POWER_UNLOCK_GET     = 0x00000E04, /* \STUB */
-	FAN_SPEED_GET        = 0x00000802, /* \GFNS */
-	TEMP_GET             = 0x00000202, /* \GTMP */
+	BATTERY_THRESH_GET      = 0x00001103, /* \GBTT */
+	BATTERY_THRESH_SET      = 0x00001003, /* \SBTT */
+	FN_LOCK_GET             = 0x00000604, /* \GFRS */
+	FN_LOCK_SET             = 0x00000704, /* \SFRS */
+	KBDLIGHT_GET            = 0x00000602, /* \GLIV */
+	KBDLIGHT_SET            = 0x00000702, /* \SLIV */
+	MICMUTE_LED_SET         = 0x00000b04, /* \SMLS */
+	KBDLIGHT_TIMEOUT_SET    = 0x00001106, /* \SKBT */
+	KBDLIGHT_TIMEOUT_GET    = 0x00001206, /* \GKBT */
+	POWER_UNLOCK_SET        = 0x00000F04, /* \STUB */
+	POWER_UNLOCK_GET        = 0x00000E04, /* \STUB */
+	FAN_SPEED_GET           = 0x00000802, /* \GFNS */
+	TEMP_GET                = 0x00000202, /* \GTMP */
+	BATTERY_CHARGE_MODE_GET = 0x00001603, /* \GBCM */
+	BATTERY_CHARGE_MODE_SET = 0x00001503, /* \SBCM */
+	BATTERY_CHARGE_MODE_PARAM_GET = 0x00001303, /* \GBAC */
+	BATTERY_CHARGE_MODE_PARAM_SET = 0x00001203, /* \SBAC */
 };
 
 union hwmi_arg {
@@ -79,6 +83,8 @@ struct huawei_wmi {
 	bool power_unlock_available;
 	bool fan_speed_available;
 	bool temp_available;
+	bool smart_charge_available;
+	bool smart_charge_param_available;
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
@@ -391,7 +397,8 @@ static void huawei_wmi_leds_setup(struct device *dev)
 	huawei->cdev.dev = dev;
 	huawei->cdev.flags = LED_CORE_SUSPENDRESUME;
 
-	devm_led_classdev_register(dev, &huawei->cdev);
+	if (acpi_has_method(NULL, "\\SMLS") || (quirks && quirks->ec_micmute))
+		devm_led_classdev_register(dev, &huawei->cdev);
 }
 
 /* Battery protection */
@@ -589,6 +596,185 @@ static void huawei_wmi_battery_exit(struct device *dev)
 	if (huawei->battery_available) {
 		battery_hook_unregister(&huawei_wmi_battery_hook);
 		device_remove_file(dev, &dev_attr_charge_control_thresholds);
+	}
+}
+
+/* Smart charge param*/
+
+static int huawei_wmi_smart_charge_param_get(int *value)
+{
+	u8 ret[HWMI_BUFF_SIZE];
+	int err;
+
+	err = huawei_wmi_cmd(BATTERY_CHARGE_MODE_PARAM_GET, ret, HWMI_BUFF_SIZE);
+	if (err)
+		return err;
+
+	if (value)
+		*value = ret[1];
+
+	return 0;
+}
+
+static int huawei_wmi_smart_charge_param_set(int value)
+{
+	union hwmi_arg arg;
+	int err;
+
+	if (value < 0 || value > 2)
+		return -EINVAL;
+
+	arg.cmd = BATTERY_CHARGE_MODE_PARAM_SET;
+	arg.args[2] = (u8) value;
+
+	err = huawei_wmi_cmd(arg.cmd, NULL, 0);
+	return err;
+}
+
+static ssize_t smart_charge_param_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, value;
+
+	err = huawei_wmi_smart_charge_param_get(&value);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d\n", value);
+}
+
+static ssize_t smart_charge_param_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int err, value;
+
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+
+	err = huawei_wmi_smart_charge_param_set(value);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(smart_charge_param);
+
+static void huawei_wmi_smart_charge_param_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->smart_charge_param_available = true;
+	if (huawei_wmi_smart_charge_param_get(NULL)) {
+		huawei->smart_charge_param_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_smart_charge_param);
+}
+
+static void huawei_wmi_smart_charge_param_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->smart_charge_param_available) {
+		device_remove_file(dev, &dev_attr_smart_charge_param);
+	}
+}
+
+/* Smart charge */
+
+static int huawei_wmi_smart_charge_get(int *mode, int *unknow, int *start, int *end)
+{
+	u8 ret[HWMI_BUFF_SIZE];
+	int err;
+
+	err = huawei_wmi_cmd(BATTERY_CHARGE_MODE_GET, ret, HWMI_BUFF_SIZE);
+	if (err)
+		return err;
+
+	if (mode)
+		*mode = ret[1];
+	if (unknow)
+		*unknow = ret[2];
+	if (start)
+		*start = ret[3];
+	if (end)
+		*end = ret[4];
+
+	return 0;
+}
+
+static int huawei_wmi_smart_charge_set(int mode, int unknow, int start, int end)
+{
+	union hwmi_arg arg;
+	int err;
+
+	if (start < 0 || end < 0 || start > 100 || end > 100)
+		return -EINVAL;
+
+	arg.cmd = BATTERY_CHARGE_MODE_SET;
+	arg.args[2] = (u8) mode;
+	arg.args[3] = (u8) unknow;
+	arg.args[4] = (u8) start;
+	arg.args[5] = (u8) end;
+
+	err = huawei_wmi_cmd(arg.cmd, NULL, 0);
+	return err;
+}
+
+static ssize_t smart_charge_show(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	int err, start, end, mode, unknow;
+
+	err = huawei_wmi_smart_charge_get(&mode, &unknow, &start, &end);
+	if (err)
+		return err;
+
+	return sprintf(buf, "%d %d %d %d\n", mode, unknow, start, end);
+}
+
+static ssize_t smart_charge_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	int err, start, end, mode, unknow;
+
+	if (sscanf(buf, "%d %d %d %d", &mode, &unknow, &start, &end) != 4)
+		return -EINVAL;
+
+	err = huawei_wmi_smart_charge_set(mode, unknow, start, end);
+	if (err)
+		return err;
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(smart_charge);
+
+static void huawei_wmi_smart_charge_setup(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	huawei->smart_charge_available = true;
+	if (huawei_wmi_smart_charge_get(NULL, NULL, NULL, NULL)) {
+		huawei->smart_charge_available = false;
+		return;
+	}
+
+	device_create_file(dev, &dev_attr_smart_charge);
+}
+
+static void huawei_wmi_smart_charge_exit(struct device *dev)
+{
+	struct huawei_wmi *huawei = dev_get_drvdata(dev);
+
+	if (huawei->smart_charge_available) {
+		device_remove_file(dev, &dev_attr_smart_charge);
 	}
 }
 
@@ -1015,7 +1201,7 @@ static void huawei_wmi_fan_speed_exit(struct device *dev)
 
 /*Temp*/
 /*
- *HVY-WXX9_1.8 and WRT-WX9_? have more temp zone
+ *HVY-WXX9 and WRT-WX9 have more temp zone
  *
  *0x00 CTMP cpu     TP00
  *0x01              TP01
@@ -1173,7 +1359,16 @@ read_ec_by_name_err:
 	return -ENODEV;
 }
 
+
+
 /*FN led (read only)*/
+
+static void huawei_wmi_led_fake_set(struct led_classdev *led_cdev,
+		enum led_brightness brightness)
+{
+	printk(KERN_INFO "huawei_wmi: %s read only\n", led_cdev->name);
+}
+
 static enum led_brightness huawei_wmi_fn_led_get(struct led_classdev *led_cdev)
 {
 	u64 value;
@@ -1192,7 +1387,9 @@ static void huawei_wmi_fn_led_setup(struct device *dev)
 
 	huawei->fn_cdev.name = "platform::fn_led";
 	huawei->fn_cdev.max_brightness = 1;
+	huawei->fn_cdev.brightness_set = &huawei_wmi_led_fake_set;
 	huawei->fn_cdev.brightness_get = &huawei_wmi_fn_led_get;
+	huawei->fn_cdev.flags = LED_CORE_SUSPENDRESUME;
 	huawei->fn_cdev.dev = dev;
 
 	devm_led_classdev_register(dev, &huawei->fn_cdev);
@@ -1218,7 +1415,9 @@ static void huawei_wmi_KCMS_setup(struct device *dev)
 
 	huawei->KCMS_cdev.name = "platform::KCMS";
 	huawei->KCMS_cdev.max_brightness = 255;
+	huawei->KCMS_cdev.brightness_set = &huawei_wmi_led_fake_set;
 	huawei->KCMS_cdev.brightness_get = &huawei_wmi_KCMS_get;
+	huawei->KCMS_cdev.flags = LED_CORE_SUSPENDRESUME;
 	huawei->KCMS_cdev.dev = dev;
 
 	devm_led_classdev_register(dev, &huawei->KCMS_cdev);
@@ -1452,8 +1651,9 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		{
 			huawei_wmi_fan_speed_setup(&pdev->dev);
 			huawei_wmi_temp_setup(&pdev->dev);
-			//huawei_wmi_temp_g_setup(&pdev->dev);
 		}
+		huawei_wmi_smart_charge_setup(&pdev->dev);
+		huawei_wmi_smart_charge_param_setup(&pdev->dev);
 		huawei_wmi_power_unlock_setup(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_setup(&pdev->dev);
 		huawei_wmi_kbdlight_setup(&pdev->dev);
@@ -1484,9 +1684,10 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		huawei_wmi_kbdlight_exit(&pdev->dev);
 		huawei_wmi_kbdlight_timeout_exit(&pdev->dev);
 		huawei_wmi_power_unlock_exit(&pdev->dev);
+		huawei_wmi_smart_charge_exit(&pdev->dev);
+		huawei_wmi_smart_charge_param_exit(&pdev->dev);
 		if (huawei_wmi->hwmon)
 		{
-			//huawei_wmi_temp_g_exit(&pdev->dev);
 			huawei_wmi_temp_exit(&pdev->dev);
 			huawei_wmi_fan_speed_exit(&pdev->dev);
 			hwmon_device_unregister(huawei_wmi->hwmon);
