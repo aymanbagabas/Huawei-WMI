@@ -5,6 +5,7 @@ evdev:atkbd:dmi:bvn*:bvr*:svnHUAWEI*:pnMACH-WX9:pvr*
  KEYBOARD_KEY_281=unknown
  KEYBOARD_KEY_282=unknown
 
-# Huawei microphone mute
+# Huawei & Honor microphone mute
 evdev:name:Huawei WMI hotkeys:dmi:bvn*:bvr*:bd*:svnHUAWEI*
+evdev:name:Huawei WMI hotkeys:dmi:bvn*:bvr*:bd*:svnHONOR*
  KEYBOARD_KEY_287=f20         # Microphone mute button, should be micmute
