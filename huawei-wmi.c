@@ -20,6 +20,7 @@
 #include <linux/wmi.h>
 #include <linux/hwmon.h>
 #include <acpi/battery.h>
+#include <linux/version.h>
 
 #define HWMI_BUFF_SIZE 0x100
 
@@ -553,15 +554,23 @@ static DEVICE_ATTR_RW(charge_control_start_threshold);
 static DEVICE_ATTR_RW(charge_control_end_threshold);
 static DEVICE_ATTR_RW(charge_control_thresholds);
 
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+static int huawei_wmi_battery_add(struct power_supply *battery, struct acpi_battery_hook *hook)
+#else
 static int huawei_wmi_battery_add(struct power_supply *battery)
+#endif
 {
 	device_create_file(&battery->dev, &dev_attr_charge_control_start_threshold);
 	device_create_file(&battery->dev, &dev_attr_charge_control_end_threshold);
 
 	return 0;
 }
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+static int huawei_wmi_battery_remove(struct power_supply *battery, struct acpi_battery_hook *hook)
+#else
 static int huawei_wmi_battery_remove(struct power_supply *battery)
+#endif
 {
 	device_remove_file(&battery->dev, &dev_attr_charge_control_start_threshold);
 	device_remove_file(&battery->dev, &dev_attr_charge_control_end_threshold);
