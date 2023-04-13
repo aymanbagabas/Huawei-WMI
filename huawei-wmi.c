@@ -554,7 +554,6 @@ static DEVICE_ATTR_RW(charge_control_start_threshold);
 static DEVICE_ATTR_RW(charge_control_end_threshold);
 static DEVICE_ATTR_RW(charge_control_thresholds);
 
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
 static int huawei_wmi_battery_add(struct power_supply *battery, struct acpi_battery_hook *hook)
 #else
@@ -566,6 +565,7 @@ static int huawei_wmi_battery_add(struct power_supply *battery)
 
 	return 0;
 }
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
 static int huawei_wmi_battery_remove(struct power_supply *battery, struct acpi_battery_hook *hook)
 #else
