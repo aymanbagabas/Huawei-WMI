@@ -120,11 +120,13 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_KEY,    0x2a0,          { KEY_PROG1 } },
  	{ KE_KEY,    0x2a1,          { KEY_PROG1 } },
  	{ KE_KEY,    0x2a6,          { KEY_PROG1 } },
-	// Keyboard backlit
+	// Keyboard backlight
 	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
 	{ KE_IGNORE, KBDLIGHT_KEY_2, { KEY_KBDILLUMUP } },
-	{ KE_END,    0 }
+	// Ignore Ambient Light Sensoring
+	{ KE_KEY,    0x2c1,          { KEY_RESERVED } },
+	{ KE_END,	 0 }
 };
 
 static int battery_reset = -1;
