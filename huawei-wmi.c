@@ -18,6 +18,7 @@
 #include <linux/power_supply.h>
 #include <linux/sysfs.h>
 #include <linux/wmi.h>
+#include <linux/version.h>
 #include <acpi/battery.h>
 
 /*
