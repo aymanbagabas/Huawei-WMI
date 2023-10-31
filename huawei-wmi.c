@@ -19,6 +19,7 @@
 #include <linux/sysfs.h>
 #include <linux/wmi.h>
 #include <linux/hwmon.h>
+#include <linux/version.h>
 #include <acpi/battery.h>
 #include <linux/version.h>
 
@@ -972,7 +973,7 @@ static void huawei_wmi_kbdlight_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_kbdlight);
 }
 
-/*Keyboard backlight timeout*/
+/* Keyboard backlight timeout */
 
 static int huawei_wmi_kbdlight_timeout_get(int *seconds)
 {
@@ -1053,7 +1054,7 @@ static void huawei_wmi_kbdlight_timeout_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_kbdlight_timeout);
 }
 
-/*Power unlock*/
+/* Power unlock */
 
 static int huawei_wmi_power_unlock_get(int *on)
 {
@@ -1133,9 +1134,9 @@ static void huawei_wmi_power_unlock_exit(struct device *dev)
 		device_remove_file(dev, &dev_attr_power_unlock);
 }
 
-/*Hwmon subdriver*/
+/* Hwmon subdriver */
 
-/*Fan speed*/
+/* Fan speed */
 
 static int huawei_wmi_fan_speed_get(u8 num, int *rpm)
 {
@@ -1210,21 +1211,21 @@ static void huawei_wmi_fan_speed_exit(struct device *dev)
 	}
 }
 
-/*Temp*/
+/* Temp */
 /*
- *HVY-WXX9 and WRT-WX9 have more temp zone
+ * HVY-WXX9 and WRT-WX9 have more temp zone
  *
- *0x00 CTMP cpu     TP00
- *0x01              TP01
- *0x05 TSLO         TP08
- *0x06              TP06
- *0x07 TNTC         TP02
- *0x08 CNTC         TP03
- *0x0B DNTC         TP05
- *0x0E BTMP battery BTEM
- *0x0F              TP0C
- *0x15              TP07
- *0x16              TP04
+ * 0x00 CTMP cpu     TP00
+ * 0x01              TP01
+ * 0x05 TSLO         TP08
+ * 0x06              TP06
+ * 0x07 TNTC         TP02
+ * 0x08 CNTC         TP03
+ * 0x0B DNTC         TP05
+ * 0x0E BTMP battery BTEM
+ * 0x0F              TP0C
+ * 0x15              TP07
+ * 0x16              TP04
  */
 
 static int huawei_wmi_temp_get(u8 num, int *temp)
@@ -1371,8 +1372,7 @@ read_ec_by_name_err:
 }
 
 
-
-/*FN led (read only)*/
+/* FN led (read only) */
 
 static void huawei_wmi_led_fake_set(struct led_classdev *led_cdev,
 		enum led_brightness brightness)
@@ -1406,7 +1406,7 @@ static void huawei_wmi_fn_led_setup(struct device *dev)
 	devm_led_classdev_register(dev, &huawei->fn_cdev);
 }
 
-/*Keyboard backlight level (read only)*/
+/* Keyboard backlight level (read only) */
 
 static enum led_brightness huawei_wmi_KCMS_get(struct led_classdev *led_cdev)
 {
