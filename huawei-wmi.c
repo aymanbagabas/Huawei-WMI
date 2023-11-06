@@ -1334,106 +1334,6 @@ static void huawei_wmi_temp_exit(struct device *dev)
 	}
 }
 
-/* EC subdriver */
-
-static int read_ec_by_name(char *acpi_method, u64 *value)
-{
-	acpi_handle handle;
-	acpi_status status;
-	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
-	union acpi_object *obj;
-
-	if (!acpi_method)
-		goto read_ec_by_name_err;
-
-	handle = ec_get_handle();
-	if (!handle)
-		goto read_ec_by_name_err;
-
-	status = acpi_evaluate_object(handle, acpi_method, NULL, &buffer);
-    if (ACPI_FAILURE(status))
-		goto read_ec_by_name_err;
-
-	obj = buffer.pointer;
-	if (obj->type == ACPI_TYPE_INTEGER){
-		if (value){
-			*value = obj->integer.value;
-		}
-	}
-	else {
-		goto read_ec_by_name_err;
-	}
-	kfree(buffer.pointer);
-	return 0;
-
-read_ec_by_name_err:
-	kfree(buffer.pointer);
-	return -ENODEV;
-}
-
-
-/* FN led (read only) */
-
-static void huawei_wmi_led_fake_set(struct led_classdev *led_cdev,
-		enum led_brightness brightness)
-{
-	printk(KERN_INFO "huawei_wmi: %s read only\n", led_cdev->name);
-}
-
-static enum led_brightness huawei_wmi_fn_led_get(struct led_classdev *led_cdev)
-{
-	u64 value;
-	int err;
-
-	err = read_ec_by_name("FNKL", &value);
-	if (err)
-		return err;
-
-	return value;
-}
-
-static void huawei_wmi_fn_led_setup(struct device *dev)
-{
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
-
-	huawei->fn_cdev.name = "platform::fn_led";
-	huawei->fn_cdev.max_brightness = 1;
-	huawei->fn_cdev.brightness_set = &huawei_wmi_led_fake_set;
-	huawei->fn_cdev.brightness_get = &huawei_wmi_fn_led_get;
-	huawei->fn_cdev.flags = LED_CORE_SUSPENDRESUME;
-	huawei->fn_cdev.dev = dev;
-
-	devm_led_classdev_register(dev, &huawei->fn_cdev);
-}
-
-/* Keyboard backlight level (read only) */
-
-static enum led_brightness huawei_wmi_KCMS_get(struct led_classdev *led_cdev)
-{
-	u64 value;
-	int err;
-
-	err = read_ec_by_name("KCMS", &value);
-	if (err)
-		return err;
-
-	return value;
-}
-
-static void huawei_wmi_KCMS_setup(struct device *dev)
-{
-	struct huawei_wmi *huawei = dev_get_drvdata(dev);
-
-	huawei->KCMS_cdev.name = "platform::KCMS";
-	huawei->KCMS_cdev.max_brightness = 255;
-	huawei->KCMS_cdev.brightness_set = &huawei_wmi_led_fake_set;
-	huawei->KCMS_cdev.brightness_get = &huawei_wmi_KCMS_get;
-	huawei->KCMS_cdev.flags = LED_CORE_SUSPENDRESUME;
-	huawei->KCMS_cdev.dev = dev;
-
-	devm_led_classdev_register(dev, &huawei->KCMS_cdev);
-}
-
 /* debugfs */
 
 static void huawei_wmi_debugfs_call_dump(struct seq_file *m, void *data,
@@ -1649,9 +1549,6 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 
 	if (wmi_has_guid(HWMI_METHOD_GUID)) {
 		mutex_init(&huawei_wmi->wmi_lock);
-
-		huawei_wmi_KCMS_setup(&pdev->dev);
-		huawei_wmi_fn_led_setup(&pdev->dev);
 
 		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi", NULL, NULL);
 		if (IS_ERR(huawei_wmi->hwmon)) 
