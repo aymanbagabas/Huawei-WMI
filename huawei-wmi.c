@@ -47,6 +47,7 @@ enum {
 	MICMUTE_LED_SET         = 0x00000b04, /* \SMLS */
 	KBDLIGHT_TIMEOUT_SET    = 0x00001106, /* \SKBT */
 	KBDLIGHT_TIMEOUT_GET    = 0x00001206, /* \GKBT */
+	KBDLIGHT_SET_AUTO       = 0x00001506, /* \SKBL */
 	POWER_UNLOCK_SET        = 0x00000F04, /* \STUB */
 	POWER_UNLOCK_GET        = 0x00000E04, /* \STUB */
 	FAN_SPEED_GET           = 0x00000802, /* \GFNS */
@@ -67,6 +68,7 @@ struct quirk_entry {
 	bool ec_micmute;
 	bool report_brightness;
 	bool handle_kbdlight;
+	bool kbdlight_auto;
 };
 
 static struct quirk_entry *quirks;
@@ -133,6 +135,7 @@ static const struct key_entry huawei_wmi_keymap[] = {
 static int battery_reset = -1;
 static int report_brightness = -1;
 static int handle_kbdlight = -1;
+static int kbdlight_auto = -1;
 
 module_param(battery_reset, bint, 0444);
 MODULE_PARM_DESC(battery_reset,
@@ -143,6 +146,9 @@ MODULE_PARM_DESC(report_brightness,
 module_param(handle_kbdlight, bint, 0444);
 MODULE_PARM_DESC(handle_kbdlight,
 		"Handle keyboard backlight events.");
+module_param(kbdlight_auto, bint, 0444);
+MODULE_PARM_DESC(kbdlight_auto,
+		"Keyboard backlight supports the auto mode.");
 
 /* Quirks */
 
@@ -158,6 +164,11 @@ static struct quirk_entry quirk_unknown = {
 
 static struct quirk_entry quirk_skip_kbdlight = {
 	.handle_kbdlight = false,
+};
+
+static struct quirk_entry quirk_kbdlight_auto = {
+	.handle_kbdlight = false,
+	.kbdlight_auto = true,
 };
 
 static struct quirk_entry quirk_mach_wx9 = {
@@ -225,6 +236,15 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "HLYL-WXX9")
 		},
 		.driver_data = &quirk_skip_kbdlight
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Honor MRA-XXX",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HONOR"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MRA-XXX")
+		},
+		.driver_data = &quirk_kbdlight_auto
 	},
 	{  }
 };
@@ -920,6 +940,19 @@ static int huawei_wmi_kbdlight_set(int level)
 	return huawei_wmi_cmd(arg.cmd, NULL, 0);
 }
 
+static int huawei_wmi_kbdlight_set_auto(int level)
+{
+	union hwmi_arg arg;
+
+	if (level < 0 || level > 255)
+		return -EINVAL;
+
+	arg.cmd = KBDLIGHT_SET_AUTO;
+	arg.args[2] = level;
+
+	return huawei_wmi_cmd(arg.cmd, NULL, 0);
+}
+
 static ssize_t kbdlight_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
@@ -942,7 +975,10 @@ static ssize_t kbdlight_store(struct device *dev,
 	if (kstrtoint(buf, 10, &level))
 		return -EINVAL;
 
-	err = huawei_wmi_kbdlight_set(level);
+	if (quirks && quirks->kbdlight_auto)
+		err = huawei_wmi_kbdlight_set_auto(level);
+	else
+		err = huawei_wmi_kbdlight_set(level);
 	if (err)
 		return err;
 
@@ -956,7 +992,8 @@ static void huawei_wmi_kbdlight_setup(struct device *dev)
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
 	huawei->kbdlight_available = true;
-	if (huawei_wmi_kbdlight_get(NULL)) {
+	if (!(acpi_has_method(NULL, "\\SKBL") || (quirks && quirks->kbdlight_auto))
+	    && huawei_wmi_kbdlight_get(NULL)) {
 		huawei->kbdlight_available = false;
 		return;
 	}
@@ -1141,7 +1178,7 @@ static int huawei_wmi_fan_speed_get(u8 num, int *rpm)
 {
 	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
-	
+
 	union hwmi_arg arg;
 	arg.cmd = FAN_SPEED_GET;
 	arg.args[2] = num;
@@ -1189,7 +1226,7 @@ static void huawei_wmi_fan_speed_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	huawei->fan_speed_available = true;
-	if (huawei_wmi_fan_speed_get(0, NULL)) 
+	if (huawei_wmi_fan_speed_get(0, NULL))
 	{
 		huawei->fan_speed_available = false;
 		return;
@@ -1231,7 +1268,7 @@ static int huawei_wmi_temp_get(u8 num, int *temp)
 {
 	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err;
-	
+
 	union hwmi_arg arg;
 	arg.cmd = TEMP_GET;
 	arg.args[2] = num;
@@ -1294,7 +1331,7 @@ static void huawei_wmi_temp_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 	huawei->temp_available = true;
-	if (huawei_wmi_temp_get(0, NULL)) 
+	if (huawei_wmi_temp_get(0, NULL))
 	{
 		huawei->temp_available = false;
 		return;
@@ -1550,7 +1587,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 		mutex_init(&huawei_wmi->wmi_lock);
 
 		huawei_wmi->hwmon = hwmon_device_register_with_groups(&pdev->dev, "huawei_wmi", NULL, NULL);
-		if (IS_ERR(huawei_wmi->hwmon)) 
+		if (IS_ERR(huawei_wmi->hwmon))
 		{
 			huawei_wmi->hwmon = NULL;
 		}
@@ -1630,6 +1667,8 @@ static __init int huawei_wmi_init(void)
 		quirks->report_brightness = report_brightness;
 	if (handle_kbdlight != -1)
 		quirks->handle_kbdlight = handle_kbdlight;
+	if (kbdlight_auto != -1)
+		quirks->kbdlight_auto = kbdlight_auto;
 
 	err = platform_driver_register(&huawei_wmi_driver);
 	if (err)
