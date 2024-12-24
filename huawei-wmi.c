@@ -104,30 +104,50 @@ static struct huawei_wmi *huawei_wmi;
 enum {
 	KBDLIGHT_KEY_0 = 0x293,
 	KBDLIGHT_KEY_1 = 0x294,
-	KBDLIGHT_KEY_2 = 0x295
+	KBDLIGHT_KEY_2 = 0x295,
+	KBDLIGHT_KEY_OFF = 0x2b1,
+	KBDLIGHT_KEY_LOW = 0x2b2,
+	KBDLIGHT_KEY_HIGH = 0x2b3,
+	KBDLIGHT_KEY_AUTO = 0x2b4,
 };
 
 static const struct key_entry huawei_wmi_keymap[] = {
-	{ KE_KEY,    0x281,          { KEY_BRIGHTNESSDOWN } },
-	{ KE_KEY,    0x282,          { KEY_BRIGHTNESSUP } },
-	{ KE_KEY,    0x284,          { KEY_MUTE } },
-	{ KE_KEY,    0x285,          { KEY_VOLUMEDOWN } },
-	{ KE_KEY,    0x286,          { KEY_VOLUMEUP } },
-	{ KE_KEY,    0x287,          { KEY_MICMUTE } },
-	{ KE_KEY,    0x289,          { KEY_WLAN } },
+	{ KE_KEY,     0x281,              { KEY_BRIGHTNESSDOWN } },
+	{ KE_KEY,     0x282,              { KEY_BRIGHTNESSUP } },
+	{ KE_KEY,     0x283,              { KEY_TOUCHPAD_ON } },
+	{ KE_KEY,     0x2a3,              { KEY_TOUCHPAD_OFF } },
+	{ KE_KEY,     0x284,              { KEY_MUTE } },
+	{ KE_KEY,     0x285,              { KEY_VOLUMEDOWN } },
+	{ KE_KEY,     0x286,              { KEY_VOLUMEUP } },
+	{ KE_KEY,     0x287,              { KEY_MICMUTE } },
+	{ KE_KEY,     0x288,              { KEY_CAMERA_ACCESS_TOGGLE } },
+	{ KE_KEY,     0x289,              { KEY_WLAN } },
 	// Huawei |M| key
-	{ KE_KEY,    0x28a,          { KEY_CONFIG } },
+	{ KE_KEY,     0x28a,              { KEY_CONTROLPANEL } },
+	// Sidebar (notifications) key
+	{ KE_KEY,     0x28b,              { KEY_NOTIFICATION_CENTER } },
+	{ KE_KEY,     0x28e,              { KEY_SELECTIVE_SCREENSHOT } },
+	// Keyboard backlight (F-keys)
+	{ KE_IGNORE,  KBDLIGHT_KEY_0,     { KEY_KBDILLUMTOGGLE } },
+	{ KE_IGNORE,  KBDLIGHT_KEY_1,     { KEY_KBDILLUMDOWN } },
+	{ KE_IGNORE,  KBDLIGHT_KEY_2,     { KEY_KBDILLUMUP } },
 	// Power unlock (Fn+P)
-	{ KE_KEY,    0x2a0,          { KEY_PROG1 } },
- 	{ KE_KEY,    0x2a1,          { KEY_PROG1 } },
- 	{ KE_KEY,    0x2a6,          { KEY_PROG1 } },
-	// Keyboard backlight
-	{ KE_IGNORE, KBDLIGHT_KEY_0, { KEY_KBDILLUMTOGGLE } },
-	{ KE_IGNORE, KBDLIGHT_KEY_1, { KEY_KBDILLUMDOWN } },
-	{ KE_IGNORE, KBDLIGHT_KEY_2, { KEY_KBDILLUMUP } },
+	{ KE_KEY,     0x2a0,              { KEY_PROG1 } },
+	{ KE_KEY,     0x2a1,              { KEY_PROG1 } },
+	{ KE_KEY,     0x2a6,              { KEY_PROG1 } },
+	// Refresh rate (Fn+R)
+	{ KE_KEY,     0x2a7,              { KEY_REFRESH_RATE_TOGGLE } },
+	// Keyboard backlight (space bar, toggles in that order)
+	{ KE_KEY,     KBDLIGHT_KEY_OFF,   { KEY_KBDILLUMDOWN } },
+	{ KE_KEY,     KBDLIGHT_KEY_AUTO,  { KEY_KBDILLUMTOGGLE } },
+	{ KE_KEY,     KBDLIGHT_KEY_LOW,   { KEY_KBDILLUMDOWN } },
+	{ KE_KEY,     KBDLIGHT_KEY_HIGH,  { KEY_KBDILLUMUP } },
 	// Ignore Ambient Light Sensoring
-	{ KE_KEY,    0x2c1,          { KEY_RESERVED } },
-	{ KE_END,	 0 }
+	{ KE_IGNORE,  0x2c1,              { KEY_RESERVED } },
+	// Camera module slot
+	{ KE_KEY,     0x2e0,              { KEY_CAMERA_ACCESS_ENABLE } },
+	{ KE_KEY,     0x2e1,              { KEY_CAMERA_ACCESS_DISABLE } },
+	{ KE_END, 0 }
 };
 
 static int battery_reset = -1;
@@ -1470,26 +1490,14 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 	sparse_keymap_report_entry(idev, key, 1, true);
 }
 
-static void huawei_wmi_input_notify(u32 value, void *context)
+static void huawei_wmi_input_notify(union acpi_object *obj, void *context)
 {
 	struct input_dev *idev = (struct input_dev *)context;
-	struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
-	union acpi_object *obj;
-	acpi_status status;
 
-	status = wmi_get_event_data(value, &response);
-	if (ACPI_FAILURE(status)) {
-		dev_err(&idev->dev, "Unable to get event data\n");
-		return;
-	}
-
-	obj = (union acpi_object *)response.pointer;
 	if (obj && obj->type == ACPI_TYPE_INTEGER)
 		huawei_wmi_process_key(idev, obj->integer.value);
 	else
 		dev_err(&idev->dev, "Bad response type\n");
-
-	kfree(response.pointer);
 }
 
 static int huawei_wmi_input_setup(struct device *dev,
@@ -1573,7 +1581,7 @@ static int huawei_wmi_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int huawei_wmi_remove(struct platform_device *pdev)
+static void huawei_wmi_remove(struct platform_device *pdev)
 {
 	const struct wmi_device_id *guid = huawei_wmi_events_id_table;
 
@@ -1601,8 +1609,6 @@ static int huawei_wmi_remove(struct platform_device *pdev)
 		}
 
 	}
-
-	return 0;
 }
 
 static struct platform_driver huawei_wmi_driver = {
