@@ -92,9 +92,8 @@ struct huawei_wmi {
 
 	struct huawei_wmi_debug debug;
 	struct input_dev *idev[2];
-	struct led_classdev cdev;
-	struct led_classdev fn_cdev;
-	struct led_classdev KCMS_cdev;
+	struct led_classdev micmute_cdev;
+	struct led_classdev kbdlight_cdev;
 	struct device *dev;
 	struct device *hwmon;
 
@@ -140,10 +139,10 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	// Refresh rate (Fn+R)
 	{ KE_KEY,     0x2a7,              { KEY_REFRESH_RATE_TOGGLE } },
 	// Keyboard backlight (space bar, toggles in that order)
-	{ KE_KEY,     KBDLIGHT_KEY_OFF,   { KEY_KBDILLUMDOWN } },
+	{ KE_KEY,     KBDLIGHT_KEY_OFF,   { KEY_KBDILLUMTOGGLE } },
 	{ KE_KEY,     KBDLIGHT_KEY_AUTO,  { KEY_KBDILLUMTOGGLE } },
-	{ KE_KEY,     KBDLIGHT_KEY_LOW,   { KEY_KBDILLUMDOWN } },
-	{ KE_KEY,     KBDLIGHT_KEY_HIGH,  { KEY_KBDILLUMUP } },
+	{ KE_IGNORE,  KBDLIGHT_KEY_LOW,   { KEY_KBDILLUMDOWN } },
+	{ KE_IGNORE,  KBDLIGHT_KEY_HIGH,  { KEY_KBDILLUMUP } },
 	// Ignore Ambient Light Sensoring
 	{ KE_IGNORE,  0x2c1,              { KEY_RESERVED } },
 	// Camera module slot
@@ -429,19 +428,35 @@ static int huawei_wmi_micmute_led_set(struct led_classdev *led_cdev,
 	}
 }
 
+static int huawei_wmi_kbdlight_set_auto(int level);
+
+static int huawei_wmi_kbdlight_led_set(struct led_classdev *led_cdev,
+		enum led_brightness brightness)
+{
+	return huawei_wmi_kbdlight_set_auto(brightness);
+}
+
 static void huawei_wmi_leds_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	huawei->cdev.name = "platform::micmute";
-	huawei->cdev.max_brightness = 1;
-	huawei->cdev.brightness_set_blocking = &huawei_wmi_micmute_led_set;
-	huawei->cdev.default_trigger = "audio-micmute";
-	huawei->cdev.dev = dev;
-	huawei->cdev.flags = LED_CORE_SUSPENDRESUME;
+	huawei->micmute_cdev.name = "huawei::micmute";
+	huawei->micmute_cdev.max_brightness = 1;
+	huawei->micmute_cdev.brightness_set_blocking = &huawei_wmi_micmute_led_set;
+	huawei->micmute_cdev.default_trigger = "audio-micmute";
+	huawei->micmute_cdev.dev = dev;
+	huawei->micmute_cdev.flags = LED_CORE_SUSPENDRESUME;
 
 	if (acpi_has_method(NULL, "\\SMLS") || (quirks && quirks->ec_micmute))
-		devm_led_classdev_register(dev, &huawei->cdev);
+		devm_led_classdev_register(dev, &huawei->micmute_cdev);
+
+	huawei->kbdlight_cdev.name = "huawei::kbd_backlight";
+	huawei->kbdlight_cdev.max_brightness = 100;
+	huawei->kbdlight_cdev.brightness_set_blocking = &huawei_wmi_kbdlight_led_set;
+	huawei->kbdlight_cdev.dev = dev;
+
+	if (acpi_has_method(NULL, "\\SKBL") || (quirks && quirks->kbdlight_auto))
+		devm_led_classdev_register(dev, &huawei->kbdlight_cdev);
 }
 
 /* Battery protection */
