@@ -67,6 +67,7 @@ struct quirk_entry {
 	bool battery_reset;
 	bool ec_micmute;
 	bool report_brightness;
+	bool report_volume;
 	bool handle_kbdlight;
 	bool kbdlight_auto;
 };
@@ -143,8 +144,12 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	{ KE_KEY,     KBDLIGHT_KEY_AUTO,  { KEY_KBDILLUMTOGGLE } },
 	{ KE_IGNORE,  KBDLIGHT_KEY_LOW,   { KEY_KBDILLUMDOWN } },
 	{ KE_IGNORE,  KBDLIGHT_KEY_HIGH,  { KEY_KBDILLUMUP } },
+	{ KE_KEY,     0x2b5,              { KEY_VOICECOMMAND } },
+	{ KE_KEY,     0x2bc,              { KEY_CAMERA_ACCESS_ENABLE } },
+	{ KE_KEY,     0x2bd,              { KEY_CAMERA_ACCESS_DISABLE } },
 	// Ignore Ambient Light Sensoring
 	{ KE_IGNORE,  0x2c1,              { KEY_RESERVED } },
+	{ KE_KEY,     0x2c3,              { KEY_FIND } },
 	// Camera module slot
 	{ KE_KEY,     0x2e0,              { KEY_CAMERA_ACCESS_ENABLE } },
 	{ KE_KEY,     0x2e1,              { KEY_CAMERA_ACCESS_DISABLE } },
@@ -153,6 +158,7 @@ static const struct key_entry huawei_wmi_keymap[] = {
 
 static int battery_reset = -1;
 static int report_brightness = -1;
+static int report_volume = -1;
 static int handle_kbdlight = -1;
 static int kbdlight_auto = -1;
 
@@ -162,6 +168,9 @@ MODULE_PARM_DESC(battery_reset,
 module_param(report_brightness, bint, 0444);
 MODULE_PARM_DESC(report_brightness,
 		"Report brightness keys.");
+module_param(report_volume, bint, 0444);
+MODULE_PARM_DESC(report_volume,
+		"Report volume keys.");
 module_param(handle_kbdlight, bint, 0444);
 MODULE_PARM_DESC(handle_kbdlight,
 		"Handle keyboard backlight events.");
@@ -201,6 +210,13 @@ static struct quirk_entry quirk_matebook_x = {
 	.handle_kbdlight = false,
 };
 
+static struct quirk_entry quirk_matebook_d = {
+	.report_brightness = false,
+	.report_volume = false,
+	.handle_kbdlight = false,
+};
+
+
 static const struct dmi_system_id huawei_quirks[] = {
 	{
 		.callback = dmi_matched,
@@ -219,6 +235,15 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "HUAWEI MateBook X")
 		},
 		.driver_data = &quirk_matebook_x
+	},
+	{
+		.callback = dmi_matched,
+		.ident = "Huawei MCLF-XX",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MCLF-XX")
+		},
+		.driver_data = &quirk_matebook_d
 	},
 	{
 		.callback = dmi_matched,
@@ -1532,6 +1557,12 @@ static void huawei_wmi_process_key(struct input_dev *idev, int code)
 			key->sw.code == KEY_BRIGHTNESSUP))
 		return;
 
+	if (quirks && !quirks->report_volume &&
+			(key->sw.code == KEY_VOLUMEUP ||
+			key->sw.code == KEY_VOLUMEDOWN ||
+			key->sw.code == KEY_MUTE))
+		return;
+
 	if (quirks && quirks->handle_kbdlight && huawei->kbdlight_available &&
 			(key->code == KBDLIGHT_KEY_0 ||
 			key->code == KBDLIGHT_KEY_1 ||
@@ -1686,6 +1717,8 @@ static __init int huawei_wmi_init(void)
 		quirks->battery_reset = battery_reset;
 	if (report_brightness != -1)
 		quirks->report_brightness = report_brightness;
+	if (report_volume != -1)
+		quirks->report_volume = report_volume;
 	if (handle_kbdlight != -1)
 		quirks->handle_kbdlight = handle_kbdlight;
 	if (kbdlight_auto != -1)
