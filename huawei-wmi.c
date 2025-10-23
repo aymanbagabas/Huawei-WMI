@@ -47,11 +47,15 @@ enum {
 	MICMUTE_LED_SET         = 0x00000b04, /* \SMLS */
 	KBDLIGHT_TIMEOUT_SET    = 0x00001106, /* \SKBT */
 	KBDLIGHT_TIMEOUT_GET    = 0x00001206, /* \GKBT */
+	KBDLIGHT_MODE_GET       = 0x00001306, /* \GKBM */
+	KBDLIGHT_MODE_SET       = 0x00001406, /* \SKBM */
 	KBDLIGHT_SET_AUTO       = 0x00001506, /* \SKBL */
 	POWER_UNLOCK_SET        = 0x00000F04, /* \STUB */
 	POWER_UNLOCK_GET        = 0x00000E04, /* \STUB */
 	FAN_SPEED_GET           = 0x00000802, /* \GFNS */
 	TEMP_GET                = 0x00000202, /* \GTMP */
+	TOUCHPAD_GET            = 0x00000F02, /* \GTPS */
+	TOUCHPAD_SET            = 0x00001002, /* \STPS */
 	BATTERY_CHARGE_MODE_GET = 0x00001603, /* \GBCM */
 	BATTERY_CHARGE_MODE_SET = 0x00001503, /* \SBCM */
 	BATTERY_CHARGE_MODE_PARAM_GET = 0x00001303, /* \GBAC */
@@ -111,6 +115,13 @@ enum {
 	KBDLIGHT_KEY_LOW = 0x2b2,
 	KBDLIGHT_KEY_HIGH = 0x2b3,
 	KBDLIGHT_KEY_AUTO = 0x2b4,
+};
+
+enum {
+	KBDLIGHT_MODE_OFF = 0x02,
+	KBDLIGHT_MODE_LOW = 0x03,
+	KBDLIGHT_MODE_HIGH = 0x04,
+	KBDLIGHT_MODE_AUTO = 0x10,
 };
 
 static const struct key_entry huawei_wmi_keymap[] = {
@@ -1003,9 +1014,17 @@ static int huawei_wmi_kbdlight_set(int level)
 static int huawei_wmi_kbdlight_set_auto(int level)
 {
 	union hwmi_arg arg;
+	int err;
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 
 	if (level < 0 || level > 255)
 		return -EINVAL;
+
+	arg.cmd = KBDLIGHT_MODE_SET;
+	arg.args[2] = KBDLIGHT_MODE_AUTO;
+	err = huawei_wmi_cmd(arg.cmd, NULL, 0);
+	if (!err)
+		msleep(10);
 
 	arg.cmd = KBDLIGHT_SET_AUTO;
 	arg.args[2] = level;
