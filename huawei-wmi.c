@@ -281,7 +281,7 @@ static const struct dmi_system_id huawei_quirks[] = {
 			DMI_MATCH(DMI_SYS_VENDOR, "HUAWEI"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "NBLK-WAX9X")
 		},
-		.driver_data = &quirk_unknown
+		.driver_data = &quirk_skip_kbdlight
 	},
 	{
 		.callback = dmi_matched,
