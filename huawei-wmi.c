@@ -125,6 +125,7 @@ enum {
 };
 
 static const struct key_entry huawei_wmi_keymap[] = {
+	{ KE_KEY,     0x109,              { KEY_BATTERY } },
 	{ KE_KEY,     0x281,              { KEY_BRIGHTNESSDOWN } },
 	{ KE_KEY,     0x282,              { KEY_BRIGHTNESSUP } },
 	{ KE_KEY,     0x283,              { KEY_TOUCHPAD_ON } },
@@ -164,6 +165,8 @@ static const struct key_entry huawei_wmi_keymap[] = {
 	// Camera module slot
 	{ KE_KEY,     0x2e0,              { KEY_CAMERA_ACCESS_ENABLE } },
 	{ KE_KEY,     0x2e1,              { KEY_CAMERA_ACCESS_DISABLE } },
+	{ KE_KEY,     0x2e2,              { KEY_PROG2 } },
+	{ KE_KEY,     0x2e3,              { KEY_PROG3 } },
 	{ KE_END, 0 }
 };
 
