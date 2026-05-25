@@ -24,6 +24,10 @@
 
 #define HWMI_BUFF_SIZE 0x100
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#define sysfs_emit(buf, fmt, ...) sprintf(buf, fmt, ##__VA_ARGS__)
+#endif
+
 /*
  * Huawei WMI GUIDs
  */
@@ -560,7 +564,7 @@ static ssize_t charge_control_start_threshold_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", start);
+	return sysfs_emit(buf, "%d\n", start);
 }
 
 static ssize_t charge_control_end_threshold_show(struct device *dev,
@@ -573,7 +577,7 @@ static ssize_t charge_control_end_threshold_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", end);
+	return sysfs_emit(buf, "%d\n", end);
 }
 
 static ssize_t charge_control_thresholds_show(struct device *dev,
@@ -586,7 +590,7 @@ static ssize_t charge_control_thresholds_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d %d\n", start, end);
+	return sysfs_emit(buf, "%d %d\n", start, end);
 }
 
 static ssize_t charge_control_start_threshold_store(struct device *dev,
@@ -745,7 +749,7 @@ static ssize_t smart_charge_param_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", value);
+	return sysfs_emit(buf, "%d\n", value);
 }
 
 static ssize_t smart_charge_param_store(struct device *dev,
@@ -839,7 +843,7 @@ static ssize_t smart_charge_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d %d %d %d\n", mode, unknow, start, end);
+	return sysfs_emit(buf, "%d %d %d %d\n", mode, unknow, start, end);
 }
 
 static ssize_t smart_charge_store(struct device *dev,
@@ -923,7 +927,7 @@ static ssize_t fn_lock_state_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", on);
+	return sysfs_emit(buf, "%d\n", on);
 }
 
 static ssize_t fn_lock_state_store(struct device *dev,
@@ -1044,7 +1048,7 @@ static ssize_t kbdlight_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", level);
+	return sysfs_emit(buf, "%d\n", level);
 }
 
 static ssize_t kbdlight_store(struct device *dev,
@@ -1129,7 +1133,7 @@ static ssize_t kbdlight_timeout_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", seconds);
+	return sysfs_emit(buf, "%d\n", seconds);
 }
 
 static ssize_t kbdlight_timeout_store(struct device *dev,
@@ -1209,7 +1213,7 @@ static ssize_t power_unlock_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", on);
+	return sysfs_emit(buf, "%d\n", on);
 }
 
 static ssize_t power_unlock_store(struct device *dev,
@@ -1284,7 +1288,7 @@ static ssize_t fan1_input_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", rpm);
+	return sysfs_emit(buf, "%d\n", rpm);
 }
 
 static ssize_t fan2_input_show(struct device *dev,
@@ -1297,7 +1301,7 @@ static ssize_t fan2_input_show(struct device *dev,
 	if (err)
 		return err;
 
-	return sprintf(buf, "%d\n", rpm);
+	return sysfs_emit(buf, "%d\n", rpm);
 }
 
 static DEVICE_ATTR_RO(fan1_input);
@@ -1374,7 +1378,7 @@ static int huawei_wmi_temp_get(u8 num, int *temp)
 		if (err)                                                \
 			return err;                                         \
 	                                                            \
-		return sprintf(buf, "%d000\n", temp);                   \
+		return sysfs_emit(buf, "%d000\n", temp);                \
 	}                                                           \
 	                                                            \
 	static DEVICE_ATTR_RO(temp##_idxA##_input);                 \
@@ -1383,7 +1387,7 @@ static int huawei_wmi_temp_get(u8 num, int *temp)
 			struct device_attribute *attr,                      \
 			char *buf)                                          \
 	{                                                           \
-		return sprintf(buf, _idxC);                             \
+		return sysfs_emit(buf, _idxC);                          \
 	}                                                           \
 	                                                            \
 	static DEVICE_ATTR_RO(temp##_idxA##_label);                 \
