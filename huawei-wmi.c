@@ -21,7 +21,6 @@
 #include <linux/hwmon.h>
 #include <linux/version.h>
 #include <acpi/battery.h>
-#include <linux/version.h>
 
 #define HWMI_BUFF_SIZE 0x100
 
