@@ -486,7 +486,7 @@ static void huawei_wmi_leds_setup(struct device *dev)
 {
 	struct huawei_wmi *huawei = dev_get_drvdata(dev);
 
-	huawei->micmute_cdev.name = "huawei::micmute";
+	huawei->micmute_cdev.name = "platform::micmute";
 	huawei->micmute_cdev.max_brightness = 1;
 	huawei->micmute_cdev.brightness_set_blocking = &huawei_wmi_micmute_led_set;
 	huawei->micmute_cdev.default_trigger = "audio-micmute";
