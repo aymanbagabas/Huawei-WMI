@@ -28,9 +28,15 @@
 #define sysfs_emit(buf, fmt, ...) sprintf(buf, fmt, ##__VA_ARGS__)
 #endif
 
-#ifndef kzalloc_obj
+/*
+ * Force a 1-argument kzalloc_obj() expansion so the out-of-tree source can
+ * mirror upstream's huawei-wmi.c verbatim. The in-kernel macro signature has
+ * changed between releases (mandatory GFP on 6.18 stable, variadic on
+ * mainline), so override it unconditionally with the form upstream's call
+ * sites assume.
+ */
+#undef kzalloc_obj
 #define kzalloc_obj(P) kzalloc(sizeof(P), GFP_KERNEL)
-#endif
 
 /*
  * Huawei WMI GUIDs
