@@ -1,0 +1,141 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Run weekly to catch breakage in mainline and pick up new LTS releases.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: kernel ${{ matrix.series }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        series: ["^6", "mainline"]
+
+    steps:
+      - name: Checkout module sources
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            cpio \
+            flex \
+            jq \
+            kmod \
+            libelf-dev \
+            libssl-dev \
+            xz-utils
+
+      - name: Cache kernel.org releases index
+        uses: actions/cache@v4
+        with:
+          path: releases.json
+          # Stable key so runs share one cache entry; the resolver below
+          # refreshes the file in-place when it is older than one hour.
+          key: kernel-releases-v1
+
+      - name: Resolve kernel version for series
+        id: resolve
+        run: |
+          set -euo pipefail
+          # Only refresh the cached index if it is missing or older than one hour.
+          if [ ! -f releases.json ] || [ -n "$(find releases.json -mmin +60 2>/dev/null)" ]; then
+            curl -fsSL -o releases.json https://www.kernel.org/releases.json
+          fi
+
+          series='${{ matrix.series }}'
+          resolved=$(jq -r --arg s "$series" '
+            if $s == "mainline" then
+              .releases[] | select(.moniker == "mainline") | .version + "\t" + .source
+            else
+              # Strip the leading caret to get the major-version digit.
+              ($s | ltrimstr("^")) as $major |
+              .releases
+              # Exclude the rolling mainline -rc entry so it never wins the
+              # comparison when it shares a major version with this row,
+              # and skip EOL releases entirely.
+              | map(select(.moniker != "mainline" and (.iseol | not)))
+              | map(select(.version | startswith($major + ".")))
+              | (if length == 0 then empty else
+                  max_by(.version | split(".") | map(tonumber))
+                  | .version + "\t" + .source
+                end)
+            end
+          ' releases.json)
+
+          if [ -z "$resolved" ]; then
+            echo "::error::No active non-EOL kernel release matches series '${series}'." \
+                 "Drop the row from the CI matrix and remove any version guards that targeted it."
+            exit 1
+          fi
+
+          version=$(printf '%s\n' "$resolved" | cut -f1)
+          source=$(printf '%s\n' "$resolved" | cut -f2)
+          echo "Resolved ${series} -> ${version} (${source})"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "source=${source}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache prepared kernel tree
+        id: kcache
+        uses: actions/cache@v4
+        with:
+          path: kernel
+          key: kernel-prepared-${{ steps.resolve.outputs.version }}-v1
+
+      - name: Fetch and prepare kernel ${{ steps.resolve.outputs.version }}
+        if: steps.kcache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p kernel
+          src='${{ steps.resolve.outputs.source }}'
+          ver='${{ steps.resolve.outputs.version }}'
+
+          echo "Downloading ${src}"
+          curl -fsSL -o kernel.tar "${src}"
+          tar --strip-components=1 -C kernel -xf kernel.tar
+          rm -f kernel.tar
+
+          make -C kernel defconfig
+          # Enable the subsystems our module touches so its symbols resolve.
+          ./kernel/scripts/config --file kernel/.config \
+            --enable CONFIG_ACPI_WMI \
+            --enable CONFIG_NEW_LEDS \
+            --enable CONFIG_LEDS_CLASS \
+            --enable CONFIG_HUAWEI_WMI
+          make -C kernel olddefconfig
+          make -C kernel -j"$(nproc)" modules_prepare
+
+      - name: Build huawei-wmi.ko
+        env:
+          # modules_prepare alone does not produce Module.symvers, so modpost
+          # cannot resolve external kernel symbols. The symbols are real and
+          # resolved at insmod time; demote the modpost errors to warnings so
+          # the .ko still gets produced.
+          KBUILD_MODPOST_WARN: "1"
+        run: |
+          set -euo pipefail
+          make -C kernel M="$PWD" modules
+
+      - name: Show module info
+        run: |
+          modinfo huawei-wmi.ko | head -n 20
+
+      - name: Upload built module
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: huawei-wmi-${{ steps.resolve.outputs.version }}.ko
+          path: huawei-wmi.ko
+          if-no-files-found: error

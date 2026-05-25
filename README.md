@@ -19,15 +19,19 @@ Battery protection can accessed from either `/sys/class/power_supply/BAT0/charge
 
 Fn-lock can be accessed from `/sys/devices/platform/huawei-wmi/fn_lock_state`
 
-This driver requires kernel >= 5.1. If you're on kernel <= 5.0, please refer to
-tag [v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0) for kernel < 5.0 or tag [v3.2](https://github.com/aymanbagabas/Huawei-WMI/tree/v3.2) if you're running version 5.0.
+This driver requires kernel >= 6.1. If you're still on a 5.x kernel,
+please use tag [v4.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v4.0)
+(the last release tested against 5.x); for kernel < 5.0 see
+[v1.0](https://github.com/aymanbagabas/Huawei-WMI/tree/v1.0), and for
+kernel 5.0 specifically see
+[v3.2](https://github.com/aymanbagabas/Huawei-WMI/tree/v3.2).
 
 Check out [matebook-applet](https://github.com/nekr0z/matebook-applet) for a GUI
 to control Fn-lock and battery protection.
 
 ## Installation
 
-Make sure you're using kernel >= 5.0.
+Make sure you're using kernel >= 6.1.
 You can get this driver from
 [here](https://github.com/aymanbagabas/Huawei-WMI/releases) if you want to use
 DKMS modules for easy installation.
@@ -72,8 +76,8 @@ sudo make install
 reboot
 ```
 
-This method overwrites the exsiting version of `huawei-wmi` that comes with
-kernel 5.0. You have to redo it everytime the kernel gets updated.
+This method overwrites the in-tree version of `huawei-wmi` shipped with the
+kernel. You have to redo it every time the kernel gets updated.
 
 ## Keyboard
 
