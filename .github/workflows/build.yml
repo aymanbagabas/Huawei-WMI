@@ -115,6 +115,12 @@ jobs:
           make -C kernel -j"$(nproc)" modules_prepare
 
       - name: Build huawei-wmi.ko
+        env:
+          # modules_prepare alone does not produce Module.symvers, so modpost
+          # cannot resolve external kernel symbols. The symbols are real and
+          # resolved at insmod time; demote the modpost errors to warnings so
+          # the .ko still gets produced.
+          KBUILD_MODPOST_WARN: "1"
         run: |
           set -euo pipefail
           make -C kernel M="$PWD" modules
