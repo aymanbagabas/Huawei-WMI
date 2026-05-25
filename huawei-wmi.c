@@ -1033,7 +1033,6 @@ static int huawei_wmi_kbdlight_set_auto(int level)
 {
 	union hwmi_arg arg;
 	int err;
-	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 
 	if (level < 0 || level > 255)
 		return -EINVAL;
@@ -1041,8 +1040,10 @@ static int huawei_wmi_kbdlight_set_auto(int level)
 	arg.cmd = KBDLIGHT_MODE_SET;
 	arg.args[2] = KBDLIGHT_MODE_AUTO;
 	err = huawei_wmi_cmd(arg.cmd, NULL, 0);
-	if (!err)
-		msleep(10);
+	if (err)
+		return err;
+
+	msleep(10);
 
 	arg.cmd = KBDLIGHT_SET_AUTO;
 	arg.args[2] = level;
