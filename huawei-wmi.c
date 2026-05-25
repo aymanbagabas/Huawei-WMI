@@ -24,10 +24,6 @@
 
 #define HWMI_BUFF_SIZE 0x100
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-#define sysfs_emit(buf, fmt, ...) sprintf(buf, fmt, ##__VA_ARGS__)
-#endif
-
 /*
  * Force a 1-argument kzalloc_obj() expansion so the out-of-tree source can
  * mirror upstream's huawei-wmi.c verbatim. The in-kernel macro signature has
