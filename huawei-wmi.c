@@ -663,10 +663,17 @@ static int huawei_wmi_battery_add(struct power_supply *battery, struct acpi_batt
 static int huawei_wmi_battery_add(struct power_supply *battery)
 #endif
 {
-	device_create_file(&battery->dev, &dev_attr_charge_control_start_threshold);
-	device_create_file(&battery->dev, &dev_attr_charge_control_end_threshold);
+	int err = 0;
 
-	return 0;
+	err = device_create_file(&battery->dev, &dev_attr_charge_control_start_threshold);
+	if (err)
+		return err;
+
+	err = device_create_file(&battery->dev, &dev_attr_charge_control_end_threshold);
+	if (err)
+		device_remove_file(&battery->dev, &dev_attr_charge_control_start_threshold);
+
+	return err;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
