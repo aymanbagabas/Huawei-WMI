@@ -831,7 +831,8 @@ static int huawei_wmi_smart_charge_set(int mode, int unknow, int start, int end)
 	union hwmi_arg arg;
 	int err;
 
-	if (start < 0 || end < 0 || start > 100 || end > 100)
+	if (start < 0 || end < 0 || start > 100 || end > 100 ||
+			mode < 0 || mode > 0xff || unknow < 0 || unknow > 0xff)
 		return -EINVAL;
 
 	arg.cmd = BATTERY_CHARGE_MODE_SET;
