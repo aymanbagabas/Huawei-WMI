@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        series: ["^5", "^6", "mainline"]
+        series: ["^6", "mainline"]
 
     steps:
       - name: Checkout module sources
