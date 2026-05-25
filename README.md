@@ -76,8 +76,8 @@ sudo make install
 reboot
 ```
 
-This method overwrites the exsiting version of `huawei-wmi` that comes with
-kernel 5.0. You have to redo it everytime the kernel gets updated.
+This method overwrites the in-tree version of `huawei-wmi` shipped with the
+kernel. You have to redo it every time the kernel gets updated.
 
 ## Keyboard
 

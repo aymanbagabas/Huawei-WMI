@@ -42,9 +42,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: releases.json
-          key: kernel-releases-${{ github.run_id }}
-          restore-keys: |
-            kernel-releases-
+          # Stable key so runs share one cache entry; the resolver below
+          # refreshes the file in-place when it is older than one hour.
+          key: kernel-releases-v1
 
       - name: Resolve kernel version for series
         id: resolve
@@ -63,7 +63,10 @@ jobs:
               # Strip the leading caret to get the major-version digit.
               ($s | ltrimstr("^")) as $major |
               .releases
-              | map(select(.iseol | not))
+              # Exclude the rolling mainline -rc entry so it never wins the
+              # comparison when it shares a major version with this row,
+              # and skip EOL releases entirely.
+              | map(select(.moniker != "mainline" and (.iseol | not)))
               | map(select(.version | startswith($major + ".")))
               | (if length == 0 then empty else
                   max_by(.version | split(".") | map(tonumber))
