@@ -13,9 +13,3 @@ evdev:atkbd:dmi:bvn*:bvr*:svnHUAWEI*:pnHLYL-WXX9*:pvr*
 evdev:name:Huawei WMI hotkeys:dmi:bvn*:bvr*:bd*:svnHUAWEI*
 evdev:name:Huawei WMI hotkeys:dmi:bvn*:bvr*:bd*:svnHONOR*
  KEYBOARD_KEY_287=f20         # Microphone mute button, should be micmute
-
-# Honor X16 Plus AMD (BRI-XX) 
-evdev:atkbd:dmi:bvn*:bvr*:svnHONOR:pnBRI-XX:pvr*
- KEYBOARD_KEY_0288=unknown         # Camera disable/enable button
- KEYBOARD_KEY_028b=unknown         # YOYO Smart Assistant Trigger button
- KEYBOARD_KEY_028e=print           # PrtSc button
