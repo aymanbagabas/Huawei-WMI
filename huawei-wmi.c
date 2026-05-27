@@ -993,7 +993,7 @@ static int huawei_acpi_fn_lock_set(int on)
 
 static int huawei_wmi_fn_lock_get(int *on)
 {
-	u8 ret[0x100] = { 0 };
+	u8 ret[HWMI_BUFF_SIZE] = { 0 };
 	int err, i;
 
 	/* Newer models: use direct ACPI \GFRS method */
@@ -1001,7 +1001,7 @@ static int huawei_wmi_fn_lock_get(int *on)
 		return huawei_acpi_fn_lock_get(on);
 
 	/* Legacy WMI fallback */
-	err = huawei_wmi_cmd(FN_LOCK_GET, ret, 0x100);
+	err = huawei_wmi_cmd(FN_LOCK_GET, ret, HWMI_BUFF_SIZE);
 	if (err)
 		return err;
 
