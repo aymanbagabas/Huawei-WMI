@@ -1,0 +1,26 @@
+BasedOnStyle: LLVM
+IndentWidth: 8
+UseTab: Always
+ColumnLimit: 80
+BreakBeforeBraces: Linux
+SpaceBeforeParens: ControlStatements
+
+Cpp11BracedListStyle: false
+BinPackArguments: false
+BinPackParameters: false
+
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: true
+  PadOperators: true
+
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+PackConstructorInitializers: NextLine
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
